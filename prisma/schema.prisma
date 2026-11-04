@@ -1,0 +1,440 @@
+// AliBros Logistics — Enterprise Database Schema
+// Phase 1: Foundation (PostgreSQL + Prisma ORM)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  MANAGER
+  ACCOUNTANT
+  DRIVER
+  CLIENT
+}
+
+enum OrderStatus {
+  DRAFT
+  CREATED
+  CONFIRMED
+  ASSIGNED_TO_DRIVER
+  PICKED_UP
+  IN_TRANSIT
+  DELIVERED_TO_WAREHOUSE
+  ACCEPTED_BY_MARKETPLACE
+  COMPLETED
+  CANCELLED
+}
+
+enum MarketplaceType {
+  WILDBERRIES
+  OZON
+}
+
+enum AssignmentStatus {
+  ASSIGNED
+  ACCEPTED
+  IN_PROGRESS
+  COMPLETED
+  REJECTED
+  CANCELLED
+}
+
+enum PhotoType {
+  CARGO_PICKUP
+  PACKAGING
+  LABEL_CHECK
+  WAREHOUSE_ACCEPTANCE
+  DAMAGE_REPORT
+  ACT_DOCUMENT
+}
+
+enum NotificationChannel {
+  TELEGRAM
+  IN_APP
+  EMAIL
+  SMS
+}
+
+enum NotificationType {
+  ORDER_STATUS_CHANGED
+  DRIVER_ASSIGNED
+  DELIVERY_COMPLETED
+  DISCREPANCY_ALERT
+  SYSTEM_ALERT
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  ROLE_CHANGE
+  STATUS_CHANGE
+  ASSIGNMENT_CHANGE
+  EXPORT_DATA
+}
+
+// ============================================================================
+// CORE IDENTITY & USER PROFILES
+// ============================================================================
+
+model User {
+  id           String    @id @default(uuid())
+  email        String?   @unique
+  phone        String?   @unique
+  passwordHash String?
+  role         UserRole  @default(CLIENT)
+  isActive     Boolean   @default(true)
+  isVerified   Boolean   @default(false)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // Profiles (1-to-1)
+  clientProfile   ClientProfile?
+  driverProfile   DriverProfile?
+  managerProfile  ManagerProfile?
+  telegramAccount TelegramAccount?
+
+  // Audit and logs
+  auditLogs       AuditLog[]
+  statusChanges   OrderStatusHistory[]
+  uploadedPhotos  OrderPhoto[]
+  notifications   Notification[]
+
+  @@index([role])
+  @@index([phone])
+  @@index([email])
+  @@map("users")
+}
+
+model ClientProfile {
+  id                 String   @id @default(uuid())
+  userId             String   @unique
+  companyName        String
+  legalName          String?
+  inn                String?  @unique
+  kpp                String?
+  ogrn               String?
+  contactPerson      String
+  contactPhone       String
+  contactEmail       String?
+  defaultWarehouseId String?
+  notes              String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  user             User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  defaultWarehouse Warehouse? @relation("ClientDefaultWarehouse", fields: [defaultWarehouseId], references: [id], onDelete: SetNull)
+  orders           Order[]
+
+  @@index([userId])
+  @@index([companyName])
+  @@index([inn])
+  @@map("client_profiles")
+}
+
+model DriverProfile {
+  id                 String   @id @default(uuid())
+  userId             String   @unique
+  fullName           String
+  licenseNumber      String?
+  vehicleModel       String?
+  vehiclePlateNumber String?
+  vehicleCapacityM3  Float?
+  vehiclePayloadKg   Float?
+  isAvailable        Boolean  @default(true)
+  notes              String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignments OrderAssignment[]
+
+  @@index([userId])
+  @@index([isAvailable])
+  @@index([vehiclePlateNumber])
+  @@map("driver_profiles")
+}
+
+model ManagerProfile {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  fullName    String
+  department  String?
+  workPhone   String?
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("manager_profiles")
+}
+
+model TelegramAccount {
+  id              String   @id @default(uuid())
+  userId          String   @unique
+  telegramId      BigInt   @unique
+  username        String?
+  firstName       String?
+  lastName        String?
+  languageCode    String?  @default("ru")
+  photoUrl        String?
+  authDate        DateTime?
+  isBotBlocked    Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([telegramId])
+  @@index([username])
+  @@map("telegram_accounts")
+}
+
+// ============================================================================
+// WAREHOUSES & HUBS
+// ============================================================================
+
+model Warehouse {
+  id              String          @id @default(uuid())
+  name            String
+  code            String          @unique
+  marketplace     MarketplaceType
+  address         String
+  city            String
+  region          String?
+  geoLatitude     Float?
+  geoLongitude    Float?
+  operatingHours  String?
+  contactPhone    String?
+  isActive        Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  orders          Order[]
+  preferredClients ClientProfile[] @relation("ClientDefaultWarehouse")
+
+  @@index([marketplace])
+  @@index([city])
+  @@index([isActive])
+  @@map("warehouses")
+}
+
+// ============================================================================
+// ORDERS & CARGO
+// ============================================================================
+
+model Order {
+  id                  String          @id @default(uuid())
+  orderNumber         String          @unique
+  clientId            String
+  warehouseId         String
+  marketplace         MarketplaceType
+  status              OrderStatus     @default(CREATED)
+  
+  // Delivery specifications
+  pickupAddress       String?
+  pickupCity          String?
+  pickupContactName   String?
+  pickupContactPhone  String?
+  scheduledPickupAt   DateTime?
+  deliveredAt         DateTime?
+  
+  // Aggregated cargo indicators
+  totalBoxesCount     Int             @default(0)
+  totalPalletsCount   Int             @default(0)
+  totalWeightKg       Float?
+  totalVolumeM3       Float?
+  
+  // Operational fields
+  clientComment       String?
+  managerNotes        String?
+  marketplaceBarcode  String?
+  
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  // Relations
+  client              ClientProfile        @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  warehouse           Warehouse            @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  items               OrderItem[]
+  assignments         OrderAssignment[]
+  statusHistory       OrderStatusHistory[]
+  photos              OrderPhoto[]
+
+  @@index([orderNumber])
+  @@index([clientId])
+  @@index([warehouseId])
+  @@index([status])
+  @@index([marketplace])
+  @@index([createdAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id              String   @id @default(uuid())
+  orderId         String
+  boxNumber       Int?
+  boxBarcode      String?
+  lengthCm        Float?
+  widthCm         Float?
+  heightCm        Float?
+  weightKg        Float?
+  volumeM3        Float?
+  article         String?
+  productName     String?
+  quantity        Int      @default(1)
+  cargoDescription String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([boxBarcode])
+  @@map("order_items")
+}
+
+model OrderAssignment {
+  id           String           @id @default(uuid())
+  orderId      String
+  driverId     String
+  status       AssignmentStatus @default(ASSIGNED)
+  assignedAt   DateTime         @default(now())
+  acceptedAt   DateTime?
+  completedAt  DateTime?
+  notes        String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  order  Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  driver DriverProfile @relation(fields: [driverId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@index([driverId])
+  @@index([status])
+  @@map("order_assignments")
+}
+
+model OrderStatusHistory {
+  id           String       @id @default(uuid())
+  orderId      String
+  fromStatus   OrderStatus?
+  toStatus     OrderStatus
+  changedById  String?
+  comment      String?
+  createdAt    DateTime     @default(now())
+
+  order     Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  changedBy User? @relation(fields: [changedById], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([createdAt])
+  @@map("order_status_history")
+}
+
+model OrderPhoto {
+  id           String    @id @default(uuid())
+  orderId      String
+  uploadedById String?
+  photoUrl     String
+  fileKey      String?
+  type         PhotoType @default(CARGO_PICKUP)
+  caption      String?
+  fileSizeBytes Int?
+  mimeType     String?
+  createdAt    DateTime  @default(now())
+
+  order      Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  uploadedBy User? @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([type])
+  @@index([createdAt])
+  @@map("order_photos")
+}
+
+// ============================================================================
+// NOTIFICATIONS & AUDIT
+// ============================================================================
+
+model Notification {
+  id          String              @id @default(uuid())
+  userId      String
+  type        NotificationType
+  channel     NotificationChannel @default(TELEGRAM)
+  title       String
+  body        String
+  payload     Json?
+  isRead      Boolean             @default(false)
+  sentAt      DateTime?
+  readAt      DateTime?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([channel])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+model AuditLog {
+  id         String      @id @default(uuid())
+  userId     String?
+  action     AuditAction
+  resource   String
+  resourceId String?
+  ipAddress  String?
+  userAgent  String?
+  oldValue   Json?
+  newValue   Json?
+  metadata   Json?
+  createdAt  DateTime    @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([resource])
+  @@index([resourceId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ============================================================================
+// SYSTEM INTEGRATIONS
+// ============================================================================
+
+model IntegrationSettings {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  name        String
+  description String?
+  isEnabled   Boolean  @default(false)
+  config      Json
+  lastSyncAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([key])
+  @@index([isEnabled])
+  @@map("integration_settings")
+}
