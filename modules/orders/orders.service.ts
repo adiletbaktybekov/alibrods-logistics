@@ -186,18 +186,37 @@ export class OrdersService {
     const order = await prisma.order.findUnique({
       where: { id: orderId },
       include: {
-        client: { select: { id: true, userId: true, companyName: true, contactPhone: true } },
+        client: {
+          select: {
+            id: true,
+            userId: true,
+            companyName: true,
+            contactPerson: true,
+            contactPhone: true,
+            contactEmail: true,
+            inn: true,
+            legalName: true,
+          },
+        },
         warehouse: true,
         items: { orderBy: { boxNumber: 'asc' } },
         assignments: {
           include: {
-            driver: { select: { id: true, userId: true, fullName: true, vehiclePlateNumber: true } },
+            driver: {
+              select: {
+                id: true,
+                userId: true,
+                fullName: true,
+                vehicleModel: true,
+                vehiclePlateNumber: true,
+              },
+            },
           },
         },
         statusHistory: {
           orderBy: { createdAt: 'desc' },
           include: {
-            changedBy: { select: { id: true, role: true, email: true } },
+            changedBy: { select: { id: true, role: true, email: true, phone: true } },
           },
         },
         photos: { orderBy: { createdAt: 'desc' } },
@@ -431,5 +450,220 @@ export class OrdersService {
     });
 
     return assignment;
+  }
+
+  /**
+   * Confirm order by manager
+   */
+  public static async confirmOrder(
+    user: AuthenticatedUser,
+    orderId: string,
+    comment = 'Заявка подтверждена менеджером',
+    ipAddress?: string
+  ) {
+    if (!['SUPER_ADMIN', 'ADMIN', 'MANAGER'].includes(user.role)) {
+      throw new ForbiddenError('Только менеджеры могут подтверждать заявки');
+    }
+
+    const order = await prisma.order.findUnique({ where: { id: orderId } });
+    if (!order) throw new NotFoundError('Order', orderId);
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const res = await tx.order.update({
+        where: { id: orderId },
+        data: { status: OrderStatus.CONFIRMED },
+      });
+
+      await tx.orderStatusHistory.create({
+        data: {
+          orderId,
+          fromStatus: order.status,
+          toStatus: OrderStatus.CONFIRMED,
+          changedById: user.id,
+          comment,
+        },
+      });
+
+      return res;
+    });
+
+    await AuditService.log({
+      userId: user.id,
+      action: AuditAction.STATUS_CHANGE,
+      resource: 'Order',
+      resourceId: orderId,
+      oldValue: { status: order.status },
+      newValue: { status: OrderStatus.CONFIRMED },
+      ipAddress,
+    });
+
+    return updated;
+  }
+
+  /**
+   * Reject order with mandatory reason
+   */
+  public static async rejectOrder(
+    user: AuthenticatedUser,
+    orderId: string,
+    reason: string,
+    ipAddress?: string
+  ) {
+    if (!['SUPER_ADMIN', 'ADMIN', 'MANAGER'].includes(user.role)) {
+      throw new ForbiddenError('Только менеджеры могут отклонять заявки');
+    }
+
+    if (!reason || reason.trim().length === 0) {
+      throw new ValidationError('Причина отклонения обязательна для заполнения');
+    }
+
+    const order = await prisma.order.findUnique({ where: { id: orderId } });
+    if (!order) throw new NotFoundError('Order', orderId);
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const res = await tx.order.update({
+        where: { id: orderId },
+        data: { status: OrderStatus.REJECTED_BY_MANAGER },
+      });
+
+      await tx.orderStatusHistory.create({
+        data: {
+          orderId,
+          fromStatus: order.status,
+          toStatus: OrderStatus.REJECTED_BY_MANAGER,
+          changedById: user.id,
+          comment: `Отклонено менеджером. Причина: ${reason.trim()}`,
+        },
+      });
+
+      return res;
+    });
+
+    await AuditService.log({
+      userId: user.id,
+      action: AuditAction.STATUS_CHANGE,
+      resource: 'Order',
+      resourceId: orderId,
+      oldValue: { status: order.status },
+      newValue: { status: OrderStatus.REJECTED_BY_MANAGER },
+      metadata: { reason: reason.trim() },
+      ipAddress,
+    });
+
+    return updated;
+  }
+
+  /**
+   * Update internal manager notes
+   */
+  public static async saveManagerNotes(
+    user: AuthenticatedUser,
+    orderId: string,
+    notes: string,
+    ipAddress?: string
+  ) {
+    if (!['SUPER_ADMIN', 'ADMIN', 'MANAGER'].includes(user.role)) {
+      throw new ForbiddenError('Недостаточно прав для редактирования заметок менеджера');
+    }
+
+    const order = await prisma.order.update({
+      where: { id: orderId },
+      data: { managerNotes: notes },
+    });
+
+    await AuditService.log({
+      userId: user.id,
+      action: AuditAction.UPDATE,
+      resource: 'Order',
+      resourceId: orderId,
+      metadata: { field: 'managerNotes' },
+      ipAddress,
+    });
+
+    return order;
+  }
+
+  /**
+   * Admin dashboard statistics
+   */
+  public static async getAdminDashboardStats() {
+    if (!process.env.DATABASE_URL) {
+      return {
+        total: 0,
+        created: 0,
+        pendingConfirmation: 0,
+        confirmed: 0,
+        inDelivery: 0,
+        completed: 0,
+        rejected: 0,
+        recentOrders: [],
+      };
+    }
+    try {
+      const inDeliveryStatuses: OrderStatus[] = [
+        OrderStatus.ASSIGNED_TO_DRIVER,
+        OrderStatus.ACCEPTED_BY_DRIVER,
+        OrderStatus.PICKED_UP,
+        OrderStatus.IN_TRANSIT,
+        OrderStatus.DELIVERED_TO_WAREHOUSE,
+      ];
+      const completedStatuses: OrderStatus[] = [
+        OrderStatus.ACCEPTED_BY_MARKETPLACE,
+        OrderStatus.COMPLETED,
+      ];
+      const rejectedStatuses: OrderStatus[] = [
+        OrderStatus.REJECTED_BY_MANAGER,
+        OrderStatus.CANCELLED,
+      ];
+
+      const [
+        total,
+        created,
+        pendingConfirmation,
+        confirmed,
+        inDelivery,
+        completed,
+        rejected,
+        recentOrders,
+      ] = await Promise.all([
+        prisma.order.count(),
+        prisma.order.count({ where: { status: OrderStatus.CREATED } }),
+        prisma.order.count({ where: { status: OrderStatus.PENDING_CONFIRMATION } }),
+        prisma.order.count({ where: { status: OrderStatus.CONFIRMED } }),
+        prisma.order.count({ where: { status: { in: inDeliveryStatuses } } }),
+        prisma.order.count({ where: { status: { in: completedStatuses } } }),
+        prisma.order.count({ where: { status: { in: rejectedStatuses } } }),
+        prisma.order.findMany({
+          take: 10,
+          orderBy: { createdAt: 'desc' },
+          include: {
+            warehouse: { select: { name: true, marketplace: true } },
+            client: { select: { companyName: true, contactPerson: true, contactPhone: true } },
+          },
+        }),
+      ]);
+
+      return {
+        total,
+        created,
+        pendingConfirmation,
+        confirmed,
+        inDelivery,
+        completed,
+        rejected,
+        recentOrders,
+      };
+    } catch {
+      return {
+        total: 0,
+        created: 0,
+        pendingConfirmation: 0,
+        confirmed: 0,
+        inDelivery: 0,
+        completed: 0,
+        rejected: 0,
+        recentOrders: [],
+      };
+    }
   }
 }
