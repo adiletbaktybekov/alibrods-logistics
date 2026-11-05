@@ -167,16 +167,28 @@ export class TelegramBotService {
       }
     }
 
-    // Default welcome for unlinked user
+    // Default welcome for unlinked user with Mini App button for sellers
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://alibros.com';
+
     await client.sendMessage({
       chatId: tgId,
       text: [
         `👋 <b>Добро пожаловать в AliBros Logistics!</b>`,
         ``,
-        `Этот бот предназначен для водителей транспортной службы.`,
-        `Для получения доступа введите <b>одноразовый код привязки</b>, полученный от вашего диспетчера (например, <code>ABL-A8B3C9</code>).`,
+        `• <b>Для селлеров Wildberries и Ozon:</b> откройте мобильный личный кабинет для оформления и контроля поставок по кнопке ниже.`,
+        `• <b>Для водителей автопарка:</b> отправьте полученный от диспетчера одноразовый код привязки (например, <code>ABL-A8B3C9</code>).`,
       ].join('\n'),
       parseMode: 'HTML',
+      replyMarkup: {
+        inline_keyboard: [
+          [
+            {
+              text: '📱 Открыть кабинет селлера (Mini App)',
+              web_app: { url: `${appUrl}/miniapp` },
+            },
+          ],
+        ],
+      },
     });
   }
 
