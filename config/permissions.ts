@@ -101,6 +101,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
     'reports:read-operational',
     'reports:export',
     'clients:read-own',
+    'integrations:manage',
   ],
   DRIVER: [
     'orders:read-assigned',

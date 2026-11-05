@@ -235,3 +235,23 @@ export async function generateDriverLinkCodeAction(driverProfileId: string) {
     };
   }
 }
+
+export async function syncGoogleSheetsAction() {
+  const user = await requireStaffUser();
+  const { GoogleSheetsSyncService } = await import(
+    '@/modules/integrations/google-sheets-sync.service'
+  );
+  const result = await GoogleSheetsSyncService.runFullSync(user);
+  revalidatePath('/admin/integrations/google-sheets');
+  revalidatePath('/admin/orders');
+  return result;
+}
+
+export async function getGoogleSheetsStatusAction() {
+  await requireStaffUser();
+  const { GoogleSheetsSyncService } = await import(
+    '@/modules/integrations/google-sheets-sync.service'
+  );
+  return GoogleSheetsSyncService.getStatus();
+}
+

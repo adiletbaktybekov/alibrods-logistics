@@ -4,7 +4,7 @@ import { NotFoundError, ForbiddenError, ValidationError } from '@/lib/errors';
 import { assertOrderAccess } from '@/server/guards';
 import { AuthenticatedUser } from '@/types/rbac';
 import { AuditService } from '@/modules/audit/audit.service';
-import { AuditAction, OrderStatus, Prisma } from '@prisma/client';
+import { AuditAction, OrderStatus, Prisma, UserRole } from '@prisma/client';
 import { WarehousesService } from '@/modules/warehouses/warehouses.service';
 import { CreateOrderDto, CreateClientOrderDto, UpdateOrderStatusDto, AssignDriverDto } from './orders.dto';
 import { NotificationDispatcherService } from '@/modules/notifications/dispatcher.service';
@@ -682,5 +682,90 @@ export class OrdersService {
         recentOrders: [],
       };
     }
+  }
+
+  /**
+   * Updates delivery cost of an order (e.g. from Google Sheets or Accounting)
+   */
+  public static async updateDeliveryCost(
+    user: AuthenticatedUser,
+    params: {
+      orderId?: string;
+      orderNumber?: string;
+      deliveryCostAmount: number;
+      currency?: string;
+      source?: string;
+    }
+  ) {
+    const allowedRoles: UserRole[] = [
+      UserRole.SUPER_ADMIN,
+      UserRole.ADMIN,
+      UserRole.MANAGER,
+      UserRole.ACCOUNTANT,
+    ];
+
+    if (!allowedRoles.includes(user.role)) {
+      throw new ForbiddenError('Доступ к установке стоимости доставки запрещён для данной роли');
+    }
+
+    if (!params.orderId && !params.orderNumber) {
+      throw new ValidationError('Необходимо указать orderId или orderNumber заявки');
+    }
+
+    const amount = Number(params.deliveryCostAmount);
+    if (isNaN(amount) || !isFinite(amount) || amount <= 0 || amount > 10_000_000) {
+      throw new ValidationError(
+        `Некорректная сумма стоимости доставки (${params.deliveryCostAmount}). Сумма должна быть числом от 0.01 до 10 000 000.`
+      );
+    }
+
+    const order = await prisma.order.findFirst({
+      where: params.orderId
+        ? { id: params.orderId }
+        : { orderNumber: params.orderNumber },
+    });
+
+    if (!order) {
+      throw new NotFoundError('Order', params.orderId || params.orderNumber || '');
+    }
+
+    const currency = (params.currency || 'RUB').trim().toUpperCase().slice(0, 5);
+
+    // Loop & redundant update protection:
+    // If existing deliveryCostAmount and currency match the new values, skip write
+    const currentCost = order.deliveryCostAmount ? Number(order.deliveryCostAmount) : null;
+    if (currentCost === amount && order.currency === currency) {
+      return { order, isUpdated: false };
+    }
+
+    const updated = await prisma.order.update({
+      where: { id: order.id },
+      data: {
+        deliveryCostAmount: amount,
+        currency,
+      },
+    });
+
+    // Record in AuditLog
+    await AuditService.log({
+      userId: user.id,
+      action: AuditAction.UPDATE,
+      resource: 'Order',
+      resourceId: order.id,
+      oldValue: {
+        deliveryCostAmount: currentCost,
+        currency: order.currency,
+      },
+      newValue: {
+        deliveryCostAmount: amount,
+        currency,
+      },
+      metadata: {
+        source: params.source || 'GOOGLE_SHEETS',
+        orderNumber: order.orderNumber,
+      },
+    });
+
+    return { order: updated, isUpdated: true };
   }
 }

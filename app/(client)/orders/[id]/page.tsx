@@ -96,7 +96,7 @@ export default async function OrderDetailPage({ params }: OrderDetailPageProps) 
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 pt-3 border-t border-slate-100 text-xs">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 pt-3 border-t border-slate-100 text-xs">
                 <div>
                   <span className="text-slate-500">Количество коробок</span>
                   <div className="text-lg font-bold text-slate-900 mt-0.5">{order.totalBoxesCount} шт.</div>
@@ -104,6 +104,20 @@ export default async function OrderDetailPage({ params }: OrderDetailPageProps) 
                 <div>
                   <span className="text-slate-500">Количество паллет</span>
                   <div className="text-lg font-bold text-slate-900 mt-0.5">{order.totalPalletsCount || 0} шт.</div>
+                </div>
+                <div>
+                  <span className="text-slate-500">Стоимость доставки</span>
+                  <div className="text-base font-bold text-slate-900 mt-0.5">
+                    {order.deliveryCostAmount != null ? (
+                      <span className="text-emerald-700">
+                        {Number(order.deliveryCostAmount).toLocaleString()} {order.currency || '₽'}
+                      </span>
+                    ) : (
+                      <span className="text-slate-400 font-normal text-xs italic block mt-1">
+                        Рассчитывается
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 
