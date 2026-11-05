@@ -65,6 +65,7 @@ export async function loginAction(prevState: unknown, formData: FormData) {
     };
   }
 
+  let redirectPath = '/dashboard';
   try {
     const result = await AuthService.login(parsed.data);
 
@@ -76,12 +77,16 @@ export async function loginAction(prevState: unknown, formData: FormData) {
       path: '/',
       maxAge: 7 * 24 * 60 * 60, // 7 days
     });
+
+    if (['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'].includes(result.user.role)) {
+      redirectPath = '/admin';
+    }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Ошибка авторизации';
     return { success: false, error: message };
   }
 
-  redirect('/dashboard');
+  redirect(redirectPath);
 }
 
 export async function registerAction(prevState: unknown, formData: FormData) {

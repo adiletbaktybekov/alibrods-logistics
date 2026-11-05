@@ -30,6 +30,16 @@ async function initAdmin() {
     process.exit(1);
   }
 
+  const rawUrl = process.env.DIRECT_URL || process.env.DATABASE_URL || '';
+  if (rawUrl) {
+    try {
+      const parsed = new URL(rawUrl);
+      console.log(`📡 Целевая база: ${parsed.pathname.replace(/^\//, '')} (${parsed.hostname})`);
+    } catch {
+      // ignore
+    }
+  }
+
   // 1. Проверяем, существует ли уже SUPER_ADMIN в базе данных
   const existingSuperAdmin = await prisma.user.findFirst({
     where: { role: UserRole.SUPER_ADMIN },
