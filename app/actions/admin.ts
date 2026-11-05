@@ -216,3 +216,22 @@ export async function getClientDetailAction(clientId: string) {
   await requireStaffUser();
   return ClientsService.getById(clientId);
 }
+
+export async function generateDriverLinkCodeAction(driverProfileId: string) {
+  const user = await requireStaffUser();
+  try {
+    const { DriverPairingService } = await import('@/modules/telegram/pairing.service');
+    const result = await DriverPairingService.generatePairingCode(driverProfileId, user.id);
+    return {
+      success: true,
+      code: result.code,
+      expiresAt: result.expiresAt,
+      deepLink: result.deepLink,
+    };
+  } catch (err: unknown) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Не удалось сформировать код привязки',
+    };
+  }
+}

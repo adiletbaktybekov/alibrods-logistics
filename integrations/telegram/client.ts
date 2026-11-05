@@ -46,4 +46,53 @@ export class TelegramBotClient {
       return false;
     }
   }
+
+  public async sendMessageWithRetry(
+    options: SendTelegramMessageOptions,
+    maxRetries = 2
+  ): Promise<boolean> {
+    let attempt = 0;
+    while (attempt <= maxRetries) {
+      const success = await this.sendMessage(options);
+      if (success) return true;
+      attempt++;
+      if (attempt <= maxRetries) {
+        await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+      }
+    }
+    return false;
+  }
+
+  public async answerCallbackQuery(
+    callbackQueryId: string,
+    text?: string,
+    showAlert = false
+  ): Promise<boolean> {
+    if (!this.botToken) return false;
+
+    try {
+      const response = await fetch(`${this.baseUrl}/answerCallbackQuery`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          callback_query_id: callbackQueryId,
+          text,
+          show_alert: showAlert,
+        }),
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
+}
+
+let botClientInstance: TelegramBotClient | null = null;
+
+export function getTelegramBotClient(): TelegramBotClient {
+  if (!botClientInstance) {
+    const token = process.env.TELEGRAM_BOT_TOKEN || '';
+    botClientInstance = new TelegramBotClient(token);
+  }
+  return botClientInstance;
 }

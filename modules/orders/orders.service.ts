@@ -7,6 +7,7 @@ import { AuditService } from '@/modules/audit/audit.service';
 import { AuditAction, OrderStatus, Prisma } from '@prisma/client';
 import { WarehousesService } from '@/modules/warehouses/warehouses.service';
 import { CreateOrderDto, CreateClientOrderDto, UpdateOrderStatusDto, AssignDriverDto } from './orders.dto';
+import { NotificationDispatcherService } from '@/modules/notifications/dispatcher.service';
 
 export class OrdersService {
   /**
@@ -448,6 +449,9 @@ export class OrdersService {
       metadata: { orderId, driverProfileId: dto.driverProfileId },
       ipAddress,
     });
+
+    // Notify driver via Telegram in background
+    NotificationDispatcherService.notifyDriverOrderAssigned(orderId, dto.driverProfileId).catch(() => {});
 
     return assignment;
   }

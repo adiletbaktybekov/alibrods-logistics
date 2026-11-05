@@ -4,6 +4,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { DriverModal } from './driver-modal';
+import { DriverCodeButton } from './driver-code-button';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,6 +42,7 @@ export default async function AdminDriversPage() {
                   <TableHead>Telegram</TableHead>
                   <TableHead className="text-center">Рейсов</TableHead>
                   <TableHead>Заметки</TableHead>
+                  <TableHead className="text-right">Привязка</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -101,6 +103,13 @@ export default async function AdminDriversPage() {
                       </TableCell>
                       <TableCell className="text-xs text-slate-500 max-w-xs truncate">
                         {driver.notes || '—'}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <DriverCodeButton
+                          driverId={driver.id}
+                          driverName={driver.fullName}
+                          hasTelegram={Boolean(tg)}
+                        />
                       </TableCell>
                     </TableRow>
                   );
