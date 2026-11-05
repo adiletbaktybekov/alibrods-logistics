@@ -4,6 +4,7 @@ import { logger } from '@/lib/logger';
 import { UserRole } from '@prisma/client';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 /**
  * Automated Cron Route for Google Sheets Bidirectional Accounting Sync.

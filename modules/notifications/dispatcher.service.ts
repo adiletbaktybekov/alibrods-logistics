@@ -1,6 +1,6 @@
 import { prisma } from '@/database/prisma';
 import { logger } from '@/lib/logger';
-import { getTelegramBotClient } from '@/integrations/telegram/client';
+import { getTelegramBotClient, getClientTelegramBotClient } from '@/integrations/telegram/client';
 import { OrderStatus, NotificationType, NotificationChannel } from '@prisma/client';
 import { STATUS_LABELS } from '@/components/ui/status-badge';
 import { NotificationsService } from './notifications.service';
@@ -160,7 +160,7 @@ export class NotificationDispatcherService {
             `Текущий статус: <b>${newStatusLabel}</b>`,
           ].join('\n');
 
-          const clientBot = getTelegramBotClient();
+          const clientBot = getClientTelegramBotClient();
           await clientBot.sendMessageWithRetry({
             chatId: clientTg.telegramId.toString(),
             text: clientMsg,

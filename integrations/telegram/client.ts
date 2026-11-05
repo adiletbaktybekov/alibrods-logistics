@@ -142,18 +142,47 @@ export class TelegramBotClient {
   }
 }
 
-let botClientInstance: TelegramBotClient | null = null;
+let driverBotInstance: TelegramBotClient | null = null;
+let clientBotInstance: TelegramBotClient | null = null;
+let managerBotInstance: TelegramBotClient | null = null;
 
-export function getTelegramBotClient(): TelegramBotClient {
-  if (!botClientInstance) {
+export function getDriverTelegramBotClient(): TelegramBotClient {
+  if (!driverBotInstance) {
     const token =
       process.env.TELEGRAM_DRIVER_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '';
-    botClientInstance = new TelegramBotClient(token);
+    driverBotInstance = new TelegramBotClient(token);
   }
-  return botClientInstance;
+  return driverBotInstance;
+}
+
+export function getClientTelegramBotClient(): TelegramBotClient {
+  if (!clientBotInstance) {
+    const token =
+      process.env.TELEGRAM_CLIENT_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '';
+    clientBotInstance = new TelegramBotClient(token);
+  }
+  return clientBotInstance;
+}
+
+export function getManagerTelegramBotClient(): TelegramBotClient {
+  if (!managerBotInstance) {
+    const token =
+      process.env.TELEGRAM_MANAGER_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '';
+    managerBotInstance = new TelegramBotClient(token);
+  }
+  return managerBotInstance;
+}
+
+/**
+ * Backward-compatible default getter (defaults to Driver Bot)
+ */
+export function getTelegramBotClient(): TelegramBotClient {
+  return getDriverTelegramBotClient();
 }
 
 export function resetTelegramBotClient(): void {
-  botClientInstance = null;
+  driverBotInstance = null;
+  clientBotInstance = null;
+  managerBotInstance = null;
 }
 

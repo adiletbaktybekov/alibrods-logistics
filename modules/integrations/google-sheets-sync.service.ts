@@ -60,6 +60,54 @@ export class GoogleSheetsSyncService {
 
     const startTime = Date.now();
 
+    // Concurrency lease lock check (prevent overlapping executions)
+    const existingSettings = await prisma.integrationSettings
+      .findUnique({ where: { key: 'google_sheets' } })
+      .catch(() => null);
+
+    const existingConfig = (existingSettings?.config as Record<string, unknown>) || {};
+    const syncInProgress = existingConfig.syncInProgress === true;
+    const syncStartedAt =
+      typeof existingConfig.syncStartedAt === 'number' ? existingConfig.syncStartedAt : 0;
+    const LOCK_TIMEOUT_MS = 120_000; // 2 min lease timeout
+
+    if (syncInProgress && Date.now() - syncStartedAt < LOCK_TIMEOUT_MS) {
+      logger.warn('Google Sheets sync already in progress by another worker. Skipping overlapping execution.');
+      return {
+        success: false,
+        isConfigured: true,
+        exportedCount: 0,
+        updatedCount: 0,
+        importedCostsCount: 0,
+        message: 'Синхронизация уже выполняется другим процессом.',
+      };
+    }
+
+    // Acquire lease lock
+    await prisma.integrationSettings
+      .upsert({
+        where: { key: 'google_sheets' },
+        create: {
+          key: 'google_sheets',
+          name: 'Google Таблицы (Бухгалтерия)',
+          description: 'Двусторонняя синхронизация заявок и стоимости доставки с бухгалтерией',
+          isEnabled: true,
+          config: {
+            ...existingConfig,
+            syncInProgress: true,
+            syncStartedAt: startTime,
+          },
+        },
+        update: {
+          config: {
+            ...existingConfig,
+            syncInProgress: true,
+            syncStartedAt: startTime,
+          },
+        },
+      })
+      .catch((e) => logger.warn({ err: e }, 'Failed to acquire sync lease lock'));
+
     try {
       // 1. Export confirmed orders from PostgreSQL to Google Sheets
       const orders = await prisma.order.findMany({
@@ -144,6 +192,8 @@ export class GoogleSheetsSyncService {
             totalOrdersSynced: syncRecords.length,
             durationMs,
             lastError: null,
+            syncInProgress: false,
+            syncStartedAt: null,
           },
         },
         update: {
@@ -160,6 +210,8 @@ export class GoogleSheetsSyncService {
             totalOrdersSynced: syncRecords.length,
             durationMs,
             lastError: null,
+            syncInProgress: false,
+            syncStartedAt: null,
           },
         },
       }).catch((e) => logger.warn({ err: e }, 'Failed to update IntegrationSettings table'));
@@ -182,7 +234,7 @@ export class GoogleSheetsSyncService {
       const errorMessage = err instanceof Error ? err.message : String(err);
       logger.error({ err }, 'Google Sheets synchronization failed');
 
-      // Update IntegrationSettings with lastError
+      // Update IntegrationSettings with lastError and release lock
       await prisma.integrationSettings.upsert({
         where: { key: 'google_sheets' },
         create: {
@@ -192,12 +244,17 @@ export class GoogleSheetsSyncService {
           config: {
             isConfigured: true,
             lastError: errorMessage,
+            syncInProgress: false,
+            syncStartedAt: null,
           },
         },
         update: {
           config: {
+            ...existingConfig,
             isConfigured: true,
             lastError: errorMessage,
+            syncInProgress: false,
+            syncStartedAt: null,
           },
         },
       }).catch(() => null);

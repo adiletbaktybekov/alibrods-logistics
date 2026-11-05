@@ -120,7 +120,8 @@ export async function linkMiniAppAccountAction(
   loginInput: string,
   passwordInput: string
 ) {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN || '';
+  const botToken =
+    process.env.TELEGRAM_CLIENT_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '';
   const validation = validateTelegramInitData(initData, botToken);
 
   if (!validation.isValid || !validation.user) {
