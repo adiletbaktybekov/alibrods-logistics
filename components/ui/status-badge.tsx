@@ -5,26 +5,32 @@ import { Badge } from '@/components/ui/badge';
 export const STATUS_LABELS: Record<OrderStatus, string> = {
   DRAFT: 'Черновик',
   CREATED: 'Создана',
+  PENDING_CONFIRMATION: 'Ожидает подтверждения',
   CONFIRMED: 'Подтверждена',
   ASSIGNED_TO_DRIVER: 'Назначен водитель',
-  PICKED_UP: 'Груз принят',
+  ACCEPTED_BY_DRIVER: 'Водитель принял заявку',
+  PICKED_UP: 'Забрана у клиента',
   IN_TRANSIT: 'В пути',
-  DELIVERED_TO_WAREHOUSE: 'Доставлен на склад',
-  ACCEPTED_BY_MARKETPLACE: 'Принят маркетплейсом',
-  COMPLETED: 'Завершён',
-  CANCELLED: 'Отменён',
+  DELIVERED_TO_WAREHOUSE: 'Прибыла на склад',
+  ACCEPTED_BY_MARKETPLACE: 'Принята маркетплейсом',
+  COMPLETED: 'Завершена',
+  REJECTED_BY_MANAGER: 'Отклонена менеджером',
+  CANCELLED: 'Отменена',
 };
 
 export const STATUS_VARIANTS: Record<OrderStatus, 'default' | 'success' | 'warning' | 'destructive' | 'outline'> = {
   DRAFT: 'outline',
   CREATED: 'default',
+  PENDING_CONFIRMATION: 'warning',
   CONFIRMED: 'default',
   ASSIGNED_TO_DRIVER: 'warning',
+  ACCEPTED_BY_DRIVER: 'warning',
   PICKED_UP: 'warning',
   IN_TRANSIT: 'warning',
   DELIVERED_TO_WAREHOUSE: 'success',
   ACCEPTED_BY_MARKETPLACE: 'success',
   COMPLETED: 'success',
+  REJECTED_BY_MANAGER: 'destructive',
   CANCELLED: 'destructive',
 };
 

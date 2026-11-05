@@ -6,15 +6,22 @@ export interface GoogleSheetsSyncRecord {
   marketplace: string;
   status: string;
   boxesCount: number;
-  totalWeightKg?: number;
-  totalVolumeM3?: number;
+  palletsCount?: number;
   warehouseName: string;
   createdAt: string;
+}
+
+export interface GoogleSheetsCostUpdate {
+  orderNumber: string;
+  deliveryCostAmount: number;
+  currency?: string;
+  updatedAt?: string;
 }
 
 export interface IGoogleSheetsClient {
   appendOrderRow(spreadsheetId: string, record: GoogleSheetsSyncRecord): Promise<boolean>;
   syncOrdersBatch(spreadsheetId: string, records: GoogleSheetsSyncRecord[]): Promise<boolean>;
+  fetchOrderCosts(spreadsheetId: string): Promise<GoogleSheetsCostUpdate[]>;
 }
 
 export class GoogleSheetsClient implements IGoogleSheetsClient {
@@ -26,7 +33,6 @@ export class GoogleSheetsClient implements IGoogleSheetsClient {
       { spreadsheetId, orderNumber: record.orderNumber },
       'Google Sheets integration contract invoked: appendOrderRow'
     );
-    // Real implementation requires googleapis credentials in Phase 2
     return true;
   }
 
@@ -39,5 +45,17 @@ export class GoogleSheetsClient implements IGoogleSheetsClient {
       'Google Sheets integration contract invoked: syncOrdersBatch'
     );
     return true;
+  }
+
+  /**
+   * Архитектурный контракт: получение стоимости заказа из Google Sheets по уникальному orderNumber.
+   * База данных PostgreSQL остаётся единственным источником правды о заказе.
+   */
+  public async fetchOrderCosts(spreadsheetId: string): Promise<GoogleSheetsCostUpdate[]> {
+    logger.info(
+      { spreadsheetId },
+      'Google Sheets integration contract invoked: fetchOrderCosts'
+    );
+    return [];
   }
 }

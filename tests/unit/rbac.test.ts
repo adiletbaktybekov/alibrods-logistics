@@ -15,6 +15,9 @@ describe('RBAC & Permission Matrix', () => {
     expect(hasPermission('CLIENT', 'orders:create')).toBe(true);
     expect(hasPermission('CLIENT', 'orders:read-own')).toBe(true);
     expect(hasPermission('CLIENT', 'orders:read-all')).toBe(false);
+    expect(hasPermission('CLIENT', 'orders:update-own')).toBe(false);
+    expect(hasPermission('CLIENT', 'orders:update-status')).toBe(false);
+    expect(hasPermission('CLIENT', 'orders:delete')).toBe(false);
     expect(hasPermission('CLIENT', 'drivers:manage')).toBe(false);
     expect(hasPermission('CLIENT', 'reports:read-financial')).toBe(false);
   });

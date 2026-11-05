@@ -26,13 +26,16 @@ enum UserRole {
 enum OrderStatus {
   DRAFT
   CREATED
+  PENDING_CONFIRMATION
   CONFIRMED
   ASSIGNED_TO_DRIVER
+  ACCEPTED_BY_DRIVER
   PICKED_UP
   IN_TRANSIT
   DELIVERED_TO_WAREHOUSE
   ACCEPTED_BY_MARKETPLACE
   COMPLETED
+  REJECTED_BY_MANAGER
   CANCELLED
 }
 
@@ -265,6 +268,10 @@ model Order {
   clientComment       String?
   managerNotes        String?
   marketplaceBarcode  String?
+  
+  // Financial fields (synchronized from Google Sheets by unique orderNumber)
+  deliveryCostAmount  Decimal?        @db.Decimal(12, 2)
+  currency            String          @default("RUB")
   
   createdAt           DateTime        @default(now())
   updatedAt           DateTime        @updatedAt

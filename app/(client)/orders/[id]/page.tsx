@@ -95,26 +95,14 @@ export default async function OrderDetailPage({ params }: OrderDetailPageProps) 
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-slate-100 text-xs">
+              <div className="grid grid-cols-2 gap-4 pt-3 border-t border-slate-100 text-xs">
                 <div>
-                  <span className="text-slate-500">Коробок</span>
-                  <div className="text-base font-bold text-slate-900 mt-0.5">{order.totalBoxesCount} шт.</div>
+                  <span className="text-slate-500">Количество коробок</span>
+                  <div className="text-lg font-bold text-slate-900 mt-0.5">{order.totalBoxesCount} шт.</div>
                 </div>
                 <div>
-                  <span className="text-slate-500">Паллет</span>
-                  <div className="text-base font-bold text-slate-900 mt-0.5">{order.totalPalletsCount || 0} шт.</div>
-                </div>
-                <div>
-                  <span className="text-slate-500">Общий вес</span>
-                  <div className="text-base font-bold text-slate-900 mt-0.5">
-                    {order.totalWeightKg ? `${order.totalWeightKg} кг` : '—'}
-                  </div>
-                </div>
-                <div>
-                  <span className="text-slate-500">Общий объём</span>
-                  <div className="text-base font-bold text-slate-900 mt-0.5">
-                    {order.totalVolumeM3 ? `${order.totalVolumeM3} м³` : '—'}
-                  </div>
+                  <span className="text-slate-500">Количество паллет</span>
+                  <div className="text-lg font-bold text-slate-900 mt-0.5">{order.totalPalletsCount || 0} шт.</div>
                 </div>
               </div>
 

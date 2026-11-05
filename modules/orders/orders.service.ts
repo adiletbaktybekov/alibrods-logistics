@@ -27,6 +27,9 @@ export class OrdersService {
     const warehouse = await WarehousesService.getById(dto.warehouseId);
     if (!warehouse) throw new NotFoundError('Warehouse', dto.warehouseId);
 
+    // Server-side schedule validation
+    WarehousesService.assertWarehouseAvailable(warehouse, dto.deliveryDate);
+
     const orderNumber = generateOrderNumber();
 
     const itemsData = Array.from({ length: dto.totalBoxesCount }, (_, idx) => ({
@@ -291,8 +294,10 @@ export class OrdersService {
 
     const inProcessingStatuses: OrderStatus[] = [
       OrderStatus.CREATED,
+      OrderStatus.PENDING_CONFIRMATION,
       OrderStatus.CONFIRMED,
       OrderStatus.ASSIGNED_TO_DRIVER,
+      OrderStatus.ACCEPTED_BY_DRIVER,
       OrderStatus.PICKED_UP,
       OrderStatus.IN_TRANSIT,
       OrderStatus.DELIVERED_TO_WAREHOUSE,

@@ -4,7 +4,12 @@ import * as React from 'react';
 import Link from 'next/link';
 import { useActionState } from 'react';
 import { createOrderAction } from '@/app/actions/orders';
-import { WarehouseItem } from '@/modules/warehouses/warehouses.service';
+import {
+  WarehouseItem,
+  isWarehouseOpenOnDate,
+  getDayOfWeekFromDate,
+  RUSSIAN_DAY_NAMES,
+} from '@/modules/warehouses/warehouses.service';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -19,18 +24,40 @@ interface OrderFormProps {
 
 export function OrderForm({ warehouses }: OrderFormProps) {
   const [state, formAction, isPending] = useActionState(createOrderAction, null);
-  const [selectedWarehouseId, setSelectedWarehouseId] = React.useState<string>(
-    warehouses[0]?.id || ''
-  );
-  const [pallets, setPallets] = React.useState<number>(0);
-  const [boxes, setBoxes] = React.useState<number>(1);
-
-  const selectedWarehouse = warehouses.find((w) => w.id === selectedWarehouseId);
 
   // Default to tomorrow's date
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
   const minDateString = tomorrow.toISOString().split('T')[0];
+
+  const [deliveryDate, setDeliveryDate] = React.useState<string>(minDateString);
+  const [pallets, setPallets] = React.useState<number>(0);
+  const [boxes, setBoxes] = React.useState<number>(1);
+
+  // Filter warehouses based on delivery date schedule
+  const availableWarehouses = React.useMemo(() => {
+    return warehouses.filter((w) => isWarehouseOpenOnDate(w, deliveryDate));
+  }, [warehouses, deliveryDate]);
+
+  const [selectedWarehouseId, setSelectedWarehouseId] = React.useState<string>(
+    availableWarehouses[0]?.id || ''
+  );
+
+  // If selected warehouse is not available on new date, switch to first available
+  React.useEffect(() => {
+    if (availableWarehouses.length > 0) {
+      const exists = availableWarehouses.some((w) => w.id === selectedWarehouseId);
+      if (!exists) {
+        setSelectedWarehouseId(availableWarehouses[0].id);
+      }
+    } else {
+      setSelectedWarehouseId('');
+    }
+  }, [availableWarehouses, selectedWarehouseId]);
+
+  const selectedWarehouse = warehouses.find((w) => w.id === selectedWarehouseId);
+  const dayOfWeekNumber = getDayOfWeekFromDate(deliveryDate);
+  const dayOfWeekName = RUSSIAN_DAY_NAMES[dayOfWeekNumber] || '';
 
   return (
     <form action={formAction} className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -43,75 +70,93 @@ export function OrderForm({ warehouses }: OrderFormProps) {
         )}
 
         <Card className="border-slate-200 shadow-sm p-6 space-y-5">
-          {/* Warehouse Selection */}
+          {/* Step 1: Delivery Date */}
           <div>
-            <Label htmlFor="warehouseId" required>
-              Склад приёмки маркетплейса
-            </Label>
-            <Select
-              id="warehouseId"
-              name="warehouseId"
-              value={selectedWarehouseId}
-              onChange={(e) => setSelectedWarehouseId(e.target.value)}
-              required
-            >
-              <optgroup label="Wildberries">
-                {warehouses
-                  .filter((w) => w.marketplace === 'WILDBERRIES')
-                  .map((w) => (
-                    <option key={w.id} value={w.id}>
-                      {w.name} — {w.city}
-                    </option>
-                  ))}
-              </optgroup>
-              <optgroup label="Ozon">
-                {warehouses
-                  .filter((w) => w.marketplace === 'OZON')
-                  .map((w) => (
-                    <option key={w.id} value={w.id}>
-                      {w.name} — {w.city}
-                    </option>
-                  ))}
-              </optgroup>
-            </Select>
-
-            {selectedWarehouse && (
-              <div className="mt-2.5 p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-1">
-                <div>
-                  <span className="font-semibold text-slate-700">Адрес склада:</span>{' '}
-                  {selectedWarehouse.address}
-                </div>
-                <div>
-                  <span className="font-semibold text-slate-700">График работы:</span>{' '}
-                  {selectedWarehouse.operatingHours || 'Круглосуточно (24/7)'}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Delivery Date */}
-          <div>
-            <Label htmlFor="deliveryDate" required>
-              Желаемая дата доставки на склад
-            </Label>
+            <div className="flex items-center justify-between mb-1.5">
+              <Label htmlFor="deliveryDate" required>
+                1. Желаемая дата доставки на склад
+              </Label>
+              {dayOfWeekName && (
+                <span className="text-xs font-semibold text-brand-700 bg-brand-50 px-2.5 py-0.5 rounded-full">
+                  День недели: {dayOfWeekName}
+                </span>
+              )}
+            </div>
             <Input
               id="deliveryDate"
               name="deliveryDate"
               type="date"
               min={minDateString}
-              defaultValue={minDateString}
+              value={deliveryDate}
+              onChange={(e) => setDeliveryDate(e.target.value)}
               required
             />
             <p className="mt-1 text-xs text-slate-500">
-              Логистический рейс формируется накануне выбранной даты доставки
+              Список доступных складов автоматически обновляется в соответствии с их графиком работы
             </p>
           </div>
 
-          {/* Cargo Quantities */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Step 2: Warehouse Selection */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <Label htmlFor="warehouseId" required>
+                2. Склад приёмки (работает в {dayOfWeekName.toLowerCase() || 'выбранный день'})
+              </Label>
+              <span className="text-xs text-slate-500 font-medium">
+                Доступно: {availableWarehouses.length} из {warehouses.length}
+              </span>
+            </div>
+
+            {availableWarehouses.length > 0 ? (
+              <Select
+                id="warehouseId"
+                name="warehouseId"
+                value={selectedWarehouseId}
+                onChange={(e) => setSelectedWarehouseId(e.target.value)}
+                required
+              >
+                <optgroup label="Wildberries">
+                  {availableWarehouses
+                    .filter((w) => w.marketplace === 'WILDBERRIES')
+                    .map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {w.name} — ({w.scheduleDescription})
+                      </option>
+                    ))}
+                </optgroup>
+                <optgroup label="Ozon">
+                  {availableWarehouses
+                    .filter((w) => w.marketplace === 'OZON')
+                    .map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {w.name} — ({w.scheduleDescription})
+                      </option>
+                    ))}
+                </optgroup>
+              </Select>
+            ) : (
+              <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
+                В выбранный день недели ({dayOfWeekName}) нет доступных складов. Пожалуйста, выберите другую дату.
+              </div>
+            )}
+
+            {selectedWarehouse && (
+              <div className="mt-2.5 p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700 flex items-center justify-between">
+                <div>
+                  <span className="font-semibold text-slate-900">Выбранный склад:</span> {selectedWarehouse.name}
+                </div>
+                <div className="text-slate-500">
+                  <span className="font-semibold text-slate-900">График:</span> {selectedWarehouse.scheduleDescription}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Step 3: Cargo Quantities */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-100">
             <div>
               <Label htmlFor="totalBoxesCount" required>
-                Количество коробок
+                3. Количество коробок
               </Label>
               <Input
                 id="totalBoxesCount"
@@ -123,12 +168,12 @@ export function OrderForm({ warehouses }: OrderFormProps) {
                 onChange={(e) => setBoxes(Math.max(1, parseInt(e.target.value || '1', 10)))}
                 required
               />
-              <p className="mt-1 text-xs text-slate-500">Общее число грузовых мест</p>
+              <p className="mt-1 text-xs text-slate-500">Количество коробов (минимум 1)</p>
             </div>
 
             <div>
-              <Label htmlFor="totalPalletsCount">
-                Количество паллет
+              <Label htmlFor="totalPalletsCount" required>
+                4. Количество паллет
               </Label>
               <Input
                 id="totalPalletsCount"
@@ -138,20 +183,21 @@ export function OrderForm({ warehouses }: OrderFormProps) {
                 max="100"
                 value={pallets}
                 onChange={(e) => setPallets(Math.max(0, parseInt(e.target.value || '0', 10)))}
+                required
               />
-              <p className="mt-1 text-xs text-slate-500">0 если отгрузка россыпью в коробах</p>
+              <p className="mt-1 text-xs text-slate-500">Укажите 0, если отгрузка россыпью в коробах</p>
             </div>
           </div>
 
-          {/* Client Comment */}
-          <div>
+          {/* Step 4: Client Comment (Optional) */}
+          <div className="pt-2 border-t border-slate-100">
             <Label htmlFor="clientComment">
-              Комментарий к заявке
+              5. Комментарий к заявке (необязательно)
             </Label>
             <Textarea
               id="clientComment"
               name="clientComment"
-              placeholder="Укажите особенности груза, контакты на объекте забора или специальные инструкции..."
+              placeholder="Дополнительные пожелания или примечания для логистов..."
               rows={3}
             />
           </div>
@@ -163,7 +209,14 @@ export function OrderForm({ warehouses }: OrderFormProps) {
               Отмена
             </Button>
           </Link>
-          <Button type="submit" variant="primary" size="lg" isLoading={isPending} className="shadow-sm">
+          <Button
+            type="submit"
+            variant="primary"
+            size="lg"
+            isLoading={isPending}
+            disabled={availableWarehouses.length === 0}
+            className="shadow-sm"
+          >
             Отправить заявку в работу
           </Button>
         </div>
@@ -174,7 +227,7 @@ export function OrderForm({ warehouses }: OrderFormProps) {
         <div className="sticky top-24 space-y-4">
           <Card className="border-slate-200 shadow-sm">
             <CardHeader className="pb-3 border-b border-slate-100">
-              <CardTitle className="text-base text-slate-900">Сводка по заявке</CardTitle>
+              <CardTitle className="text-base text-slate-900">Параметры заявки</CardTitle>
             </CardHeader>
             <CardContent className="pt-4 space-y-4 text-xs">
               <div>
@@ -187,9 +240,21 @@ export function OrderForm({ warehouses }: OrderFormProps) {
               </div>
 
               <div>
-                <span className="text-slate-500">Выбранный склад:</span>
+                <span className="text-slate-500">Склад приёмки:</span>
                 <div className="font-semibold text-slate-900 mt-0.5 text-sm">
                   {selectedWarehouse?.name || '—'}
+                </div>
+                {selectedWarehouse && (
+                  <div className="text-[11px] text-slate-500 mt-0.5">
+                    График: {selectedWarehouse.scheduleDescription}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <span className="text-slate-500">Дата доставки:</span>
+                <div className="font-semibold text-slate-900 mt-0.5 text-sm">
+                  {deliveryDate} ({dayOfWeekName})
                 </div>
               </div>
 
@@ -205,7 +270,7 @@ export function OrderForm({ warehouses }: OrderFormProps) {
               </div>
 
               <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 text-blue-900 text-[11px] leading-relaxed">
-                <span className="font-bold">Правила оформления:</span> После отправки заявка попадает операционным логистам для проверки и назначения водителя на рейс. Изменение параметров заявки после отправки блокируется.
+                <span className="font-bold">Регламент:</span> После отправки заявка поступает в обработку логистами AliBros. Самостоятельное редактирование или отмена заявки после подтверждения блокируется.
               </div>
             </CardContent>
           </Card>

@@ -111,7 +111,6 @@ export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
   CLIENT: [
     'orders:create',
     'orders:read-own',
-    'orders:update-own',
     'clients:read-own',
     'warehouses:read',
   ],
