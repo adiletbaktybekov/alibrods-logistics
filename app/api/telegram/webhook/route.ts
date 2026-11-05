@@ -46,12 +46,24 @@ function isDuplicateCallback(callbackId: string): boolean {
 }
 
 export async function POST(req: NextRequest) {
-  // 1. Verify Telegram Webhook Secret Token if configured
+  // 1. Verify Telegram Webhook Secret Token (mandatory in production)
   const secretHeader = req.headers.get('x-telegram-bot-api-secret-token');
   const configuredSecret =
     process.env.TELEGRAM_BOT_WEBHOOK_SECRET || process.env.TELEGRAM_WEBHOOK_SECRET;
 
-  if (configuredSecret && secretHeader !== configuredSecret) {
+  if (process.env.NODE_ENV === 'production') {
+    if (!configuredSecret) {
+      logger.error('TELEGRAM_BOT_WEBHOOK_SECRET is not configured in production environment');
+      return NextResponse.json(
+        { error: 'Webhook secret is not configured on server' },
+        { status: 500 }
+      );
+    }
+    if (!secretHeader || secretHeader !== configuredSecret) {
+      logger.warn({ receivedHeader: secretHeader }, 'Invalid or missing Telegram webhook secret token in production');
+      return NextResponse.json({ error: 'Unauthorized webhook request' }, { status: 403 });
+    }
+  } else if (configuredSecret && secretHeader !== configuredSecret) {
     logger.warn({ receivedHeader: secretHeader }, 'Invalid Telegram webhook secret token');
     return NextResponse.json({ error: 'Unauthorized webhook request' }, { status: 403 });
   }
