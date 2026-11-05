@@ -5,9 +5,76 @@ import { assertOrderAccess } from '@/server/guards';
 import { AuthenticatedUser } from '@/types/rbac';
 import { AuditService } from '@/modules/audit/audit.service';
 import { AuditAction, OrderStatus, Prisma } from '@prisma/client';
-import { CreateOrderDto, UpdateOrderStatusDto, AssignDriverDto } from './orders.dto';
+import { WarehousesService } from '@/modules/warehouses/warehouses.service';
+import { CreateOrderDto, CreateClientOrderDto, UpdateOrderStatusDto, AssignDriverDto } from './orders.dto';
 
 export class OrdersService {
+  /**
+   * Creates an order from the client portal interface
+   */
+  public static async createFromClient(
+    user: AuthenticatedUser,
+    dto: CreateClientOrderDto,
+    ipAddress?: string
+  ) {
+    if (user.role !== 'CLIENT') {
+      throw new ForbiddenError('Заявка может быть создана только из профиля клиента');
+    }
+
+    const client = await prisma.clientProfile.findUnique({ where: { userId: user.id } });
+    if (!client) throw new ValidationError('Профиль клиента не найден');
+
+    const warehouse = await WarehousesService.getById(dto.warehouseId);
+    if (!warehouse) throw new NotFoundError('Warehouse', dto.warehouseId);
+
+    const orderNumber = generateOrderNumber();
+
+    const itemsData = Array.from({ length: dto.totalBoxesCount }, (_, idx) => ({
+      boxNumber: idx + 1,
+      quantity: 1,
+      cargoDescription: `Грузовое место (коробка) №${idx + 1}`,
+    }));
+
+    const order = await prisma.order.create({
+      data: {
+        orderNumber,
+        clientId: client.id,
+        warehouseId: warehouse.id,
+        marketplace: warehouse.marketplace,
+        status: OrderStatus.CREATED,
+        scheduledPickupAt: dto.deliveryDate,
+        totalBoxesCount: dto.totalBoxesCount,
+        totalPalletsCount: dto.totalPalletsCount,
+        clientComment: dto.clientComment,
+        items: {
+          create: itemsData,
+        },
+        statusHistory: {
+          create: {
+            toStatus: OrderStatus.CREATED,
+            changedById: user.id,
+            comment: 'Заявка оформлена через личный кабинет клиента',
+          },
+        },
+      },
+      include: {
+        warehouse: true,
+        items: true,
+      },
+    });
+
+    await AuditService.log({
+      userId: user.id,
+      action: AuditAction.CREATE,
+      resource: 'Order',
+      resourceId: order.id,
+      ipAddress,
+      metadata: { orderNumber: order.orderNumber, marketplace: order.marketplace },
+    });
+
+    return order;
+  }
+
   /**
    * Creates an order with items and initial history log
    */
@@ -27,11 +94,11 @@ export class OrdersService {
     }
 
     // Verify warehouse exists
-    const warehouse = await prisma.warehouse.findUnique({ where: { id: dto.warehouseId } });
+    const warehouse = await WarehousesService.getById(dto.warehouseId);
     if (!warehouse) throw new NotFoundError('Warehouse', dto.warehouseId);
 
     // Calculate aggregate metrics
-    let totalBoxesCount = 0;
+    let totalBoxesCount = dto.totalBoxesCount || 0;
     let totalWeightKg = 0;
     let totalVolumeM3 = 0;
 
@@ -77,6 +144,7 @@ export class OrdersService {
         scheduledPickupAt: dto.scheduledPickupAt,
         clientComment: dto.clientComment,
         totalBoxesCount,
+        totalPalletsCount: dto.totalPalletsCount || 0,
         totalWeightKg: totalWeightKg > 0 ? totalWeightKg : undefined,
         totalVolumeM3: totalVolumeM3 > 0 ? totalVolumeM3 : undefined,
         items: {
@@ -117,14 +185,19 @@ export class OrdersService {
       include: {
         client: { select: { id: true, userId: true, companyName: true, contactPhone: true } },
         warehouse: true,
-        items: true,
+        items: { orderBy: { boxNumber: 'asc' } },
         assignments: {
           include: {
             driver: { select: { id: true, userId: true, fullName: true, vehiclePlateNumber: true } },
           },
         },
-        statusHistory: { orderBy: { createdAt: 'desc' } },
-        photos: true,
+        statusHistory: {
+          orderBy: { createdAt: 'desc' },
+          include: {
+            changedBy: { select: { id: true, role: true, email: true } },
+          },
+        },
+        photos: { orderBy: { createdAt: 'desc' } },
       },
     });
 
@@ -188,7 +261,7 @@ export class OrdersService {
         take: limit,
         orderBy: { createdAt: 'desc' },
         include: {
-          warehouse: { select: { name: true, marketplace: true } },
+          warehouse: { select: { name: true, marketplace: true, code: true } },
           client: { select: { companyName: true } },
         },
       }),
@@ -196,6 +269,60 @@ export class OrdersService {
     ]);
 
     return { items, total, page, limit };
+  }
+
+  /**
+   * Client dashboard statistics
+   */
+  public static async getClientStats(user: AuthenticatedUser) {
+    if (user.role !== 'CLIENT') {
+      throw new ForbiddenError('Access denied: client only stats');
+    }
+
+    const client = await prisma.clientProfile.findUnique({ where: { userId: user.id } });
+    if (!client) {
+      return {
+        total: 0,
+        inProcessing: 0,
+        completed: 0,
+        recentOrders: [],
+      };
+    }
+
+    const inProcessingStatuses: OrderStatus[] = [
+      OrderStatus.CREATED,
+      OrderStatus.CONFIRMED,
+      OrderStatus.ASSIGNED_TO_DRIVER,
+      OrderStatus.PICKED_UP,
+      OrderStatus.IN_TRANSIT,
+      OrderStatus.DELIVERED_TO_WAREHOUSE,
+    ];
+
+    const completedStatuses: OrderStatus[] = [
+      OrderStatus.ACCEPTED_BY_MARKETPLACE,
+      OrderStatus.COMPLETED,
+    ];
+
+    const [total, inProcessing, completed, recentOrders] = await Promise.all([
+      prisma.order.count({ where: { clientId: client.id } }),
+      prisma.order.count({ where: { clientId: client.id, status: { in: inProcessingStatuses } } }),
+      prisma.order.count({ where: { clientId: client.id, status: { in: completedStatuses } } }),
+      prisma.order.findMany({
+        where: { clientId: client.id },
+        take: 5,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          warehouse: { select: { name: true, marketplace: true } },
+        },
+      }),
+    ]);
+
+    return {
+      total,
+      inProcessing,
+      completed,
+      recentOrders,
+    };
   }
 
   /**
