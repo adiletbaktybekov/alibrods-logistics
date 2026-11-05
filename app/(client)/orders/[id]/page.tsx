@@ -7,6 +7,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { StatusBadge, STATUS_LABELS } from '@/components/ui/status-badge';
 import { Badge } from '@/components/ui/badge';
 import { formatDateTime } from '@/lib/utils';
+import { PhotoGallery } from '@/components/orders/photo-gallery';
 
 export const dynamic = 'force-dynamic';
 
@@ -119,38 +120,18 @@ export default async function OrderDetailPage({ params }: OrderDetailPageProps) 
 
           {/* Photo Reports Section */}
           <Card className="border-slate-200 shadow-sm">
-            <CardHeader className="pb-3 border-b border-slate-100">
-              <CardTitle className="text-base text-slate-900">Фотоотчёты приёмки и сдачи</CardTitle>
+            <CardHeader className="pb-3 border-b border-slate-100 flex flex-row items-center justify-between">
+              <CardTitle className="text-base text-slate-900">
+                Фотоотчёты приёмки и сдачи
+                {order.photos && order.photos.length > 0 && (
+                  <span className="ml-2 text-xs font-normal text-slate-500">
+                    ({order.photos.length})
+                  </span>
+                )}
+              </CardTitle>
             </CardHeader>
             <CardContent className="pt-4">
-              {order.photos && order.photos.length > 0 ? (
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {order.photos.map((photo) => (
-                    <div
-                      key={photo.id}
-                      className="group relative rounded-lg border border-slate-200 overflow-hidden bg-slate-50 p-2 text-xs"
-                    >
-                      <div className="aspect-square bg-slate-200 rounded flex items-center justify-center text-slate-400">
-                        Фото
-                      </div>
-                      <div className="mt-2 font-medium text-slate-800 truncate">{photo.type}</div>
-                      <div className="text-[10px] text-slate-500">{formatDateTime(photo.createdAt)}</div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="py-8 text-center text-xs text-slate-500">
-                  <div className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-400 mb-2">
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                  </div>
-                  <p>Фотоотчёты пока не прикреплены.</p>
-                  <p className="mt-0.5 text-slate-400">
-                    Водитель или менеджер загрузят фотографии при приёмке груза и после выгрузки на складе маркетплейса.
-                  </p>
-                </div>
-              )}
+              <PhotoGallery orderId={order.id} photos={order.photos || []} />
             </CardContent>
           </Card>
         </div>

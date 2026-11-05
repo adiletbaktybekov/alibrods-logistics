@@ -536,13 +536,26 @@ export class TelegramBotService {
     const fileSizeBytes = largestPhoto?.file_size || 0;
 
     try {
+      let fileBuffer: Buffer | undefined;
+      if (largestPhoto?.file_id) {
+        const fileMeta = await client.getFile(largestPhoto.file_id);
+        if (fileMeta?.file_path) {
+          const downloaded = await client.downloadFile(fileMeta.file_path);
+          if (downloaded) {
+            fileBuffer = downloaded;
+          }
+        }
+      }
+
       const res = await DriverPhotoService.processIncomingPhoto({
         driverProfileId,
         orderId: session.orderId,
         photoType: session.photoType,
-        fileSizeBytes,
+        fileSizeBytes: fileBuffer ? fileBuffer.length : fileSizeBytes,
         mimeType: 'image/jpeg',
+        fileUniqueId: largestPhoto?.file_unique_id,
         caption: msg.caption,
+        fileBuffer,
       });
 
       DriverPhotoService.clearPendingUploadSession(driverProfileId);
@@ -550,7 +563,7 @@ export class TelegramBotService {
       await client.sendMessage({
         chatId: tgId,
         text: res.isConfigured
-          ? `✅ <b>Фотоотчёт успешно принят!</b>`
+          ? `✅ <b>Фотоотчёт успешно принят и сохранён в облако S3!</b>`
           : `ℹ️ <b>Фото проверено:</b> ${res.message}`,
         parseMode: 'HTML',
         replyMarkup: this.getMainKeyboard(),

@@ -85,6 +85,61 @@ export class TelegramBotClient {
       return false;
     }
   }
+
+  /**
+   * Retrieves file information from Telegram Bot API via getFile.
+   */
+  public async getFile(
+    fileId: string
+  ): Promise<{ file_id: string; file_unique_id?: string; file_size?: number; file_path?: string } | null> {
+    if (!this.botToken) {
+      logger.warn('Telegram bot token not configured. Skipping getFile.');
+      return null;
+    }
+
+    try {
+      const response = await fetch(`${this.baseUrl}/getFile?file_id=${encodeURIComponent(fileId)}`, {
+        method: 'GET',
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.ok || !data.result) {
+        logger.error({ fileId, data }, 'Failed to get file metadata from Telegram API');
+        return null;
+      }
+
+      return data.result;
+    } catch (err) {
+      logger.error({ err, fileId }, 'Network error while calling Telegram getFile API');
+      return null;
+    }
+  }
+
+  /**
+   * Downloads raw file buffer from Telegram Bot API via file URL.
+   */
+  public async downloadFile(filePath: string): Promise<Buffer | null> {
+    if (!this.botToken) {
+      logger.warn('Telegram bot token not configured. Skipping downloadFile.');
+      return null;
+    }
+
+    try {
+      const downloadUrl = `https://api.telegram.org/file/bot${this.botToken}/${filePath}`;
+      const response = await fetch(downloadUrl);
+
+      if (!response.ok) {
+        logger.error({ filePath, status: response.status }, 'Failed to download file from Telegram');
+        return null;
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      return Buffer.from(arrayBuffer);
+    } catch (err) {
+      logger.error({ err, filePath }, 'Network error while downloading file from Telegram');
+      return null;
+    }
+  }
 }
 
 let botClientInstance: TelegramBotClient | null = null;
@@ -96,3 +151,8 @@ export function getTelegramBotClient(): TelegramBotClient {
   }
   return botClientInstance;
 }
+
+export function resetTelegramBotClient(): void {
+  botClientInstance = null;
+}
+

@@ -220,7 +220,20 @@ export class OrdersService {
             changedBy: { select: { id: true, role: true, email: true, phone: true } },
           },
         },
-        photos: { orderBy: { createdAt: 'desc' } },
+        photos: {
+          orderBy: { createdAt: 'desc' },
+          include: {
+            uploadedBy: {
+              select: {
+                id: true,
+                email: true,
+                phone: true,
+                driverProfile: { select: { fullName: true } },
+                managerProfile: { select: { fullName: true } },
+              },
+            },
+          },
+        },
       },
     });
 

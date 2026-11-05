@@ -8,6 +8,7 @@ import { StatusBadge, STATUS_LABELS } from '@/components/ui/status-badge';
 import { Badge } from '@/components/ui/badge';
 import { formatDateTime } from '@/lib/utils';
 import { OrderActions } from './order-actions';
+import { PhotoGallery } from '@/components/orders/photo-gallery';
 
 export const dynamic = 'force-dynamic';
 
@@ -250,33 +251,36 @@ export default async function AdminOrderDetailPage({ params }: AdminOrderDetailP
           )}
 
           {/* Photo Reports */}
-          {order.photos && order.photos.length > 0 && (
-            <Card className="border-slate-200 shadow-sm bg-white">
-              <CardHeader className="pb-3 border-b border-slate-100">
-                <CardTitle className="text-sm font-bold text-slate-900">
-                  Фотоотчёты ({order.photos.length})
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pt-4">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {order.photos.map((p) => (
-                    <div key={p.id} className="rounded-lg border border-slate-200 overflow-hidden bg-slate-50 text-center p-2">
-                      <div className="text-[10px] font-semibold text-slate-600 truncate">{p.type}</div>
-                      <div className="text-[9px] text-slate-400 mt-0.5">{formatDateTime(p.createdAt)}</div>
-                      <a
-                        href={p.photoUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="mt-2 inline-block text-[11px] text-brand-600 hover:underline"
-                      >
-                        Смотреть фото ↗
-                      </a>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
+          <Card className="border-slate-200 shadow-sm bg-white">
+            <CardHeader className="pb-3 border-b border-slate-100 flex flex-row items-center justify-between">
+              <CardTitle className="text-sm font-bold text-slate-900">
+                Фотоотчёты приёмки и сдачи
+                {order.photos && order.photos.length > 0 && (
+                  <span className="ml-2 text-xs font-normal text-slate-500">
+                    ({order.photos.length})
+                  </span>
+                )}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-4">
+              <PhotoGallery
+                orderId={order.id}
+                isAdmin={true}
+                photos={(order.photos || []).map((p) => ({
+                  ...p,
+                  uploadedBy: p.uploadedBy
+                    ? {
+                        fullName:
+                          p.uploadedBy.driverProfile?.fullName ||
+                          p.uploadedBy.managerProfile?.fullName ||
+                          p.uploadedBy.email,
+                        email: p.uploadedBy.email,
+                      }
+                    : null,
+                }))}
+              />
+            </CardContent>
+          </Card>
         </div>
 
         {/* Right Column: Actions, Driver Assignment, Timeline (5 cols) */}

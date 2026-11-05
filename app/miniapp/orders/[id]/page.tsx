@@ -8,6 +8,7 @@ import { StatusBadge, STATUS_LABELS } from '@/components/ui/status-badge';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { formatDateTime } from '@/lib/utils';
+import { PhotoGallery } from '@/components/orders/photo-gallery';
 
 export const dynamic = 'force-dynamic';
 
@@ -152,30 +153,13 @@ export default async function MiniAppOrderDetailPage({ params }: MiniAppOrderDet
           )}
         </Card>
 
-        {/* Photos if any */}
-        {order.photos && order.photos.length > 0 && (
-          <Card className="rounded-2xl border-slate-200 bg-white shadow-xs p-4 space-y-3">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">
-              Фотоотчёты ({order.photos.length})
-            </h3>
-            <div className="grid grid-cols-2 gap-2">
-              {order.photos.map((p) => (
-                <div key={p.id} className="p-2 border border-slate-200 rounded-xl text-center bg-slate-50 text-xs">
-                  <div className="font-semibold text-slate-800 text-[11px]">{p.type}</div>
-                  <div className="text-[10px] text-slate-400">{formatDateTime(p.createdAt)}</div>
-                  <a
-                    href={p.photoUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-1.5 inline-block text-[11px] text-brand-600 font-semibold"
-                  >
-                    Смотреть ↗
-                  </a>
-                </div>
-              ))}
-            </div>
-          </Card>
-        )}
+        {/* Photos Section */}
+        <Card className="rounded-2xl border-slate-200 bg-white shadow-xs p-4 space-y-3">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+            Фотоотчёты {order.photos && order.photos.length > 0 && `(${order.photos.length})`}
+          </h3>
+          <PhotoGallery orderId={order.id} photos={order.photos || []} />
+        </Card>
       </div>
     </div>
   );
