@@ -372,7 +372,31 @@ export class OrdersService {
     dto: UpdateOrderStatusDto,
     ipAddress?: string
   ) {
+    if (!['SUPER_ADMIN', 'ADMIN', 'MANAGER'].includes(user.role)) {
+      throw new ForbiddenError('Only managers and administrators can change order status directly');
+    }
+
     const existing = await this.getById(user, orderId);
+
+    // Terminal statuses protection: rejected or cancelled orders cannot proceed
+    if (
+      existing.status === OrderStatus.REJECTED_BY_MANAGER ||
+      existing.status === OrderStatus.CANCELLED
+    ) {
+      throw new ValidationError(
+        `Отклонённая или отменённая заявка не может менять статус (текущий статус: ${existing.status})`
+      );
+    }
+
+    // Completion rule: COMPLETED must only come from ACCEPTED_BY_MARKETPLACE
+    if (
+      dto.status === OrderStatus.COMPLETED &&
+      existing.status !== OrderStatus.ACCEPTED_BY_MARKETPLACE
+    ) {
+      throw new ValidationError(
+        `Завершить заявку можно только после фактической сдачи маркетплейсу (текущий статус: ${existing.status})`
+      );
+    }
 
     const updated = await prisma.$transaction(async (tx) => {
       const order = await tx.order.update({
@@ -425,6 +449,13 @@ export class OrdersService {
     const order = await prisma.order.findUnique({ where: { id: orderId } });
     if (!order) throw new NotFoundError('Order', orderId);
 
+    // Rule: Driver can only be assigned to a confirmed order
+    if (order.status !== OrderStatus.CONFIRMED) {
+      throw new ValidationError(
+        `Водитель может быть назначен только на подтверждённую заявку (текущий статус: ${order.status})`
+      );
+    }
+
     const driver = await prisma.driverProfile.findUnique({ where: { id: dto.driverProfileId } });
     if (!driver) throw new NotFoundError('DriverProfile', dto.driverProfileId);
 
@@ -436,23 +467,21 @@ export class OrdersService {
       },
     });
 
-    // Update order status if in CREATED or CONFIRMED state
-    if (order.status === OrderStatus.CREATED || order.status === OrderStatus.CONFIRMED) {
-      await prisma.order.update({
-        where: { id: orderId },
-        data: { status: OrderStatus.ASSIGNED_TO_DRIVER },
-      });
+    // Update order status to ASSIGNED_TO_DRIVER
+    await prisma.order.update({
+      where: { id: orderId },
+      data: { status: OrderStatus.ASSIGNED_TO_DRIVER },
+    });
 
-      await prisma.orderStatusHistory.create({
-        data: {
-          orderId,
-          fromStatus: order.status,
-          toStatus: OrderStatus.ASSIGNED_TO_DRIVER,
-          changedById: user.id,
-          comment: `Driver ${driver.fullName} assigned to order`,
-        },
-      });
-    }
+    await prisma.orderStatusHistory.create({
+      data: {
+        orderId,
+        fromStatus: order.status,
+        toStatus: OrderStatus.ASSIGNED_TO_DRIVER,
+        changedById: user.id,
+        comment: `Driver ${driver.fullName} assigned to order`,
+      },
+    });
 
     await AuditService.log({
       userId: user.id,
