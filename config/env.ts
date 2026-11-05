@@ -14,6 +14,27 @@ const envSchema = z.object({
   TELEGRAM_BOT_WEBHOOK_SECRET: z.string().optional(),
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(100),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60000),
+}).superRefine((data, ctx) => {
+  // In production/staging (e.g. Vercel deployment), DATABASE_URL and DIRECT_URL are mandatory
+  if (
+    data.NODE_ENV === 'production' &&
+    (process.env.VERCEL || process.env.STAGING || process.env.REQUIRE_DB_ENV === 'true')
+  ) {
+    if (!data.DATABASE_URL) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'DATABASE_URL is required in production and staging environments',
+        path: ['DATABASE_URL'],
+      });
+    }
+    if (!data.DIRECT_URL) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'DIRECT_URL is required in production and staging environments',
+        path: ['DIRECT_URL'],
+      });
+    }
+  }
 });
 
 export type Env = z.infer<typeof envSchema>;
