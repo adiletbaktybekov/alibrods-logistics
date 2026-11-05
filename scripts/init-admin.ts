@@ -1,46 +1,218 @@
+import readline from 'node:readline';
+import { Writable } from 'node:stream';
 import { PrismaClient, UserRole, AuditAction } from '@prisma/client';
 import argon2 from 'argon2';
 
 const prisma = new PrismaClient();
 
 /**
- * Безопасная инициализация первого SUPER_ADMIN в Production / Staging.
- *
- * Требования безопасности:
- * 1. Никаких захардкоженных паролей.
- * 2. Пароль принимается через переменную окружения `ADMIN_PASSWORD` (мин. 12 символов).
- * 3. Email принимается через `ADMIN_EMAIL`.
- * 4. Защита от перезаписи: если SUPER_ADMIN уже существует в БД, скрипт завершается без изменений.
- * 5. Хэширование строго через Argon2id (память 64МБ, 3 итерации).
- * 6. Фиксация в AuditLog.
+ * Валидация сложности пароля администратора:
+ * - Минимум 12 символов
+ * - Хотя бы одна заглавная буква (A-Z)
+ * - Хотя бы одна строчная буква (a-z)
+ * - Хотя бы одна цифра (0-9)
+ * - Хотя бы один специальный символ
+ */
+export function validatePasswordComplexity(password: string): { isValid: boolean; error?: string } {
+  if (!password || password.length < 12) {
+    return { isValid: false, error: 'Пароль должен содержать как минимум 12 символов' };
+  }
+  if (!/[A-Z]/.test(password)) {
+    return { isValid: false, error: 'Пароль должен содержать хотя бы одну заглавную латинскую букву (A-Z)' };
+  }
+  if (!/[a-z]/.test(password)) {
+    return { isValid: false, error: 'Пароль должен содержать хотя бы одну строчную латинскую букву (a-z)' };
+  }
+  if (!/[0-9]/.test(password)) {
+    return { isValid: false, error: 'Пароль должен содержать хотя бы одну цифру (0-9)' };
+  }
+  if (!/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?`~]/.test(password)) {
+    return { isValid: false, error: 'Пароль должен содержать хотя бы один специальный символ (!@#$%^&*()_+-=[]{};\':"\\|,.<>/?)' };
+  }
+  return { isValid: true };
+}
+
+/**
+ * Скрытый интерактивный ввод через terminal readline + muted Writable stream.
+ * Символы пароля не отображаются в stdout терминала, исключая утечку через экран или логи.
+ */
+function promptHidden(query: string): Promise<string> {
+  return new Promise((resolve) => {
+    let muted = false;
+    const mutableStdout = new Writable({
+      write(chunk, encoding, callback) {
+        if (!muted) {
+          process.stdout.write(chunk, encoding);
+        }
+        callback();
+      },
+    });
+
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: mutableStdout,
+      terminal: true,
+    });
+
+    process.stdout.write(query);
+    muted = true;
+
+    rl.question('', (answer) => {
+      process.stdout.write('\n');
+      rl.close();
+      resolve(answer);
+    });
+  });
+}
+
+/**
+ * Обычный интерактивный ввод строки
+ */
+function promptVisible(query: string): Promise<string> {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+    rl.question(query, (answer) => {
+      rl.close();
+      resolve(answer.trim());
+    });
+  });
+}
+
+/**
+ * Строгая проверка целевой базы данных:
+ * Разрешён запуск исключительно на Staging базе `alibros_staging` в регионе Neon Frankfurt.
+ */
+function verifyTargetDatabase() {
+  const rawUrl = process.env.DIRECT_URL || process.env.DATABASE_URL || '';
+  if (!rawUrl) {
+    console.error('❌ Ошибка безопасности: DATABASE_URL или DIRECT_URL не найдены в окружении или .env.local.');
+    process.exit(1);
+  }
+
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(rawUrl);
+  } catch {
+    console.error('❌ Ошибка: Некорректный формат строки подключения к базе данных.');
+    process.exit(1);
+  }
+
+  const dbName = parsedUrl.pathname.replace(/^\//, '');
+  const dbHost = parsedUrl.hostname;
+
+  console.log('----------------------------------------------------------------');
+  console.log(`📡 Целевая база: ${dbName}`);
+  console.log(`🌐 Хост базы:    ${dbHost}`);
+
+  const ALLOWED_DB = 'alibros_staging';
+  const IS_FRANKFURT_NEON =
+    dbHost.includes('eu-central-1') &&
+    dbHost.includes('neon.tech') &&
+    dbHost.includes('ep-dawn-wildflower-b98aa1ax');
+
+  if (dbName !== ALLOWED_DB || !IS_FRANKFURT_NEON) {
+    console.error('----------------------------------------------------------------');
+    console.error('🛑 АВАРИЙНАЯ ОСТАНОВКА БЕЗОПАСНОСТИ:');
+    console.error('   Скрипт настроен строго для Neon Staging!');
+    console.error(`   Ожидалась база: "${ALLOWED_DB}"`);
+    console.error(`   Ожидался хост Neon Frankfurt: ep-dawn-wildflower-b98aa1ax*.eu-central-1.aws.neon.tech`);
+    console.error(`   Фактическая база: "${dbName}"`);
+    console.error(`   Фактический хост: "${dbHost}"`);
+    console.error('   Запуск заблокирован для предотвращения изменения Production или чужой базы данных.');
+    console.error('----------------------------------------------------------------');
+    process.exit(1);
+  }
+
+  console.log('✅ Проверка безопасности базы: подтверждён целевой контур Neon Staging (Frankfurt).');
+  console.log('----------------------------------------------------------------');
+}
+
+/**
+ * Безопасное получение и подтверждение пароля.
+ * Пароль НЕ принимается из аргументов командной строки process.argv,
+ * чтобы предотвратить его попадание в историю команд (history) и вывод списка процессов (ps).
+ */
+async function getAdminPassword(): Promise<string> {
+  let password = process.env.ADMIN_PASSWORD || '';
+
+  if (!password) {
+    if (!process.stdin.isTTY) {
+      console.error('❌ Ошибка: Неинтерактивный режим терминала (no TTY).');
+      console.error('Для выполнения в CI/скриптах передайте ADMIN_PASSWORD через переменные окружения.');
+      process.exit(1);
+    }
+
+    const pass1 = await promptHidden('🔑 Введите пароль для SUPER_ADMIN (ввод скрыт): ');
+    const pass2 = await promptHidden('🔑 Повторите пароль для подтверждения (ввод скрыт): ');
+
+    if (!pass1) {
+      console.error('❌ Ошибка: Пароль не может быть пустым.');
+      process.exit(1);
+    }
+
+    if (pass1 !== pass2) {
+      console.error('❌ Ошибка безопасности: Введённые пароли не совпадают.');
+      process.exit(1);
+    }
+
+    password = pass1;
+  }
+
+  const complexity = validatePasswordComplexity(password);
+  if (!complexity.isValid) {
+    console.error(`❌ Ошибка безопасности: Пароль не соответствует требованиям сложности:`);
+    console.error(`   👉 ${complexity.error}`);
+    console.error('   Требования к паролю:');
+    console.error('   - минимум 12 символов');
+    console.error('   - хотя бы одна заглавная буква (A-Z)');
+    console.error('   - хотя бы одна строчная буква (a-z)');
+    console.error('   - хотя бы одна цифра (0-9)');
+    console.error('   - хотя бы один специальный символ (!@#$%^&*()_+-=[]{};\':"\\|,.<>/?)');
+    process.exit(1);
+  }
+
+  return password;
+}
+
+/**
+ * Получение email администратора
+ */
+async function getAdminEmail(): Promise<string> {
+  let email = (process.env.ADMIN_EMAIL || process.argv[2] || '').trim().toLowerCase();
+  if (!email && process.stdin.isTTY) {
+    email = (await promptVisible('📧 Введите email администратора (например: admin@alibros.ru): ')).trim().toLowerCase();
+  }
+
+  if (!email || !email.includes('@') || !email.includes('.')) {
+    console.error('❌ Ошибка: Укажите корректный ADMIN_EMAIL (например: admin@alibros.ru)');
+    console.error('Использование: ADMIN_EMAIL=admin@alibros.ru npm run admin:init');
+    process.exit(1);
+  }
+
+  return email;
+}
+
+/**
+ * Получение ФИО администратора (по умолчанию: Главный Администратор)
+ */
+function getAdminFullName(): string {
+  return (process.env.ADMIN_NAME || process.argv[3] || 'Главный Администратор').trim();
+}
+
+
+/**
+ * Безопасная инициализация первого SUPER_ADMIN в Staging.
  */
 async function initAdmin() {
-  const email = (process.env.ADMIN_EMAIL || process.argv[2] || '').trim().toLowerCase();
-  const password = process.env.ADMIN_PASSWORD || process.argv[3] || '';
-  const fullName = process.env.ADMIN_NAME || process.argv[4] || 'Главный Администратор';
+  console.log('🚀 Инициализация первого SUPER_ADMIN для AliBros Logistics');
 
-  if (!email || !email.includes('@')) {
-    console.error('❌ Ошибка: укажите корректный ADMIN_EMAIL (например: admin@alibros.ru)');
-    console.error('Использование: ADMIN_EMAIL=... ADMIN_PASSWORD=... npm run admin:init');
-    process.exit(1);
-  }
+  // 1. Строгая проверка целевой базы данных
+  verifyTargetDatabase();
 
-  if (!password || password.length < 12) {
-    console.error('❌ Ошибка безопасности: ADMIN_PASSWORD должен содержать минимум 12 символов');
-    process.exit(1);
-  }
-
-  const rawUrl = process.env.DIRECT_URL || process.env.DATABASE_URL || '';
-  if (rawUrl) {
-    try {
-      const parsed = new URL(rawUrl);
-      console.log(`📡 Целевая база: ${parsed.pathname.replace(/^\//, '')} (${parsed.hostname})`);
-    } catch {
-      // ignore
-    }
-  }
-
-  // 1. Проверяем, существует ли уже SUPER_ADMIN в базе данных
+  // 2. Проверяем, существует ли уже SUPER_ADMIN в базе данных
   const existingSuperAdmin = await prisma.user.findFirst({
     where: { role: UserRole.SUPER_ADMIN },
   });
@@ -48,11 +220,16 @@ async function initAdmin() {
   if (existingSuperAdmin) {
     console.warn('⚠️ Внимание: аккаунт SUPER_ADMIN уже существует в базе данных.');
     console.warn(`ID администратора: ${existingSuperAdmin.id}, Email: ${existingSuperAdmin.email}`);
-    console.warn('Перезапись существующего администратора заблокирована в целях безопасности.');
+    console.warn('Создание второго SUPER_ADMIN через init-admin заблокировано в целях безопасности.');
     process.exit(0);
   }
 
-  // 2. Проверяем, не занят ли указанный email другим пользователем
+  // 3. Получение данных администратора
+  const email = await getAdminEmail();
+  const fullName = getAdminFullName();
+
+
+  // 4. Проверяем, не занят ли указанный email другим пользователем
   const existingUserByEmail = await prisma.user.findUnique({
     where: { email },
   });
@@ -62,7 +239,10 @@ async function initAdmin() {
     process.exit(1);
   }
 
-  // 3. Хэшируем пароль по промышленному стандарту Argon2id
+  // 5. Безопасный ввод и валидация пароля
+  const password = await getAdminPassword();
+
+  // 6. Хэшируем пароль по стандарту Argon2id (память 64МБ, 3 итерации, 4 параллельных потока)
   const passwordHash = await argon2.hash(password, {
     type: argon2.argon2id,
     memoryCost: 65536,
@@ -70,7 +250,7 @@ async function initAdmin() {
     parallelism: 4,
   });
 
-  // 4. Создаём аккаунт SUPER_ADMIN и профиль менеджера в единой транзакции
+  // 7. Создаём аккаунт SUPER_ADMIN и профиль менеджера в единой ACID-транзакции
   const admin = await prisma.$transaction(async (tx) => {
     const user = await tx.user.create({
       data: {
@@ -118,11 +298,14 @@ async function initAdmin() {
   console.log('================================================================');
 }
 
-initAdmin()
-  .catch((err) => {
-    console.error('Критическая ошибка при инициализации администратора:', err);
-    process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+// Запуск выполняется только если файл запущен напрямую через Node CLI
+if (process.argv[1]?.includes('init-admin')) {
+  initAdmin()
+    .catch((err) => {
+      console.error('Критическая ошибка при инициализации администратора:', err);
+      process.exit(1);
+    })
+    .finally(async () => {
+      await prisma.$disconnect();
+    });
+}

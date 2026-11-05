@@ -30,3 +30,44 @@ describe('Password Security (Argon2id)', () => {
     await expect(hashPassword('short')).rejects.toThrow('at least 8 characters');
   });
 });
+
+import { validatePasswordComplexity } from '../../scripts/init-admin';
+
+describe('Admin Password Complexity Validation', () => {
+  it('should accept a compliant password (>=12 chars, uppercase, lowercase, number, special char)', () => {
+    const result = validatePasswordComplexity('AliBros@Staging2026!');
+    expect(result.isValid).toBe(true);
+    expect(result.error).toBeUndefined();
+  });
+
+  it('should reject passwords shorter than 12 characters', () => {
+    const result = validatePasswordComplexity('Ab1!short');
+    expect(result.isValid).toBe(false);
+    expect(result.error).toContain('12 символов');
+  });
+
+  it('should reject passwords missing uppercase characters', () => {
+    const result = validatePasswordComplexity('alibros@staging2026!');
+    expect(result.isValid).toBe(false);
+    expect(result.error).toContain('заглавную');
+  });
+
+  it('should reject passwords missing lowercase characters', () => {
+    const result = validatePasswordComplexity('ALIBROS@STAGING2026!');
+    expect(result.isValid).toBe(false);
+    expect(result.error).toContain('строчную');
+  });
+
+  it('should reject passwords missing digits', () => {
+    const result = validatePasswordComplexity('AliBros@StagingNoDigit!');
+    expect(result.isValid).toBe(false);
+    expect(result.error).toContain('цифру');
+  });
+
+  it('should reject passwords missing special characters', () => {
+    const result = validatePasswordComplexity('AliBrosStaging2026NoSpecial');
+    expect(result.isValid).toBe(false);
+    expect(result.error).toContain('специальный');
+  });
+});
+
