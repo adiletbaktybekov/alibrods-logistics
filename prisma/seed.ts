@@ -9,20 +9,80 @@ const prisma = new PrismaClient();
  */
 const CONFIRMED_WAREHOUSES = [
   // Ежедневно
-  { name: 'Коледино', code: 'WB_KOLEDINO', marketplace: MarketplaceType.WILDBERRIES },
-  { name: 'СК Вешки', code: 'WB_VESHKI', marketplace: MarketplaceType.WILDBERRIES },
-  { name: 'Подольск', code: 'WB_PODOLSK', marketplace: MarketplaceType.WILDBERRIES },
-  { name: 'Подольск 4', code: 'WB_PODOLSK_4', marketplace: MarketplaceType.WILDBERRIES },
-  { name: 'ВБ Щербинка', code: 'WB_SCHERBINKA', marketplace: MarketplaceType.WILDBERRIES },
-  { name: 'Озон Щербинка', code: 'OZON_SCHERBINKA', marketplace: MarketplaceType.OZON },
-  { name: 'Озон Гривно', code: 'OZON_GRIVNO', marketplace: MarketplaceType.OZON },
+  {
+    name: 'Коледино',
+    code: 'WB_KOLEDINO',
+    marketplace: MarketplaceType.WILDBERRIES,
+    operatingHours: 'Ежедневно',
+  },
+  {
+    name: 'СК Вешки',
+    code: 'WB_VESHKI',
+    marketplace: MarketplaceType.WILDBERRIES,
+    operatingHours: 'Ежедневно',
+  },
+  {
+    name: 'Подольск',
+    code: 'WB_PODOLSK',
+    marketplace: MarketplaceType.WILDBERRIES,
+    operatingHours: 'Ежедневно',
+  },
+  {
+    name: 'Подольск 4',
+    code: 'WB_PODOLSK_4',
+    marketplace: MarketplaceType.WILDBERRIES,
+    operatingHours: 'Ежедневно',
+  },
+  {
+    name: 'ВБ Щербинка',
+    code: 'WB_SCHERBINKA',
+    marketplace: MarketplaceType.WILDBERRIES,
+    operatingHours: 'Ежедневно',
+  },
+  {
+    name: 'Озон Щербинка',
+    code: 'OZON_SCHERBINKA',
+    marketplace: MarketplaceType.OZON,
+    operatingHours: 'Ежедневно',
+  },
+  {
+    name: 'Озон Гривно',
+    code: 'OZON_GRIVNO',
+    marketplace: MarketplaceType.OZON,
+    operatingHours: 'Ежедневно',
+  },
   // Понедельник / среда / пятница
-  { name: 'Радумля', code: 'WB_RADUMLYA', marketplace: MarketplaceType.WILDBERRIES },
-  { name: 'Обухово', code: 'WB_OBUKHOVO', marketplace: MarketplaceType.WILDBERRIES },
+  {
+    name: 'Радумля',
+    code: 'WB_RADUMLYA',
+    marketplace: MarketplaceType.WILDBERRIES,
+    operatingHours: 'Понедельник / Среда / Пятница',
+  },
+  {
+    name: 'Обухово',
+    code: 'WB_OBUKHOVO',
+    marketplace: MarketplaceType.WILDBERRIES,
+    operatingHours: 'Понедельник / Среда / Пятница',
+  },
   // Вторник / четверг / суббота
-  { name: 'Чашниково', code: 'WB_CHASHNIKOVO', marketplace: MarketplaceType.WILDBERRIES },
-  { name: 'Чехов 1', code: 'WB_CHEKHOV_1', marketplace: MarketplaceType.WILDBERRIES },
-  { name: 'Чехов 2', code: 'WB_CHEKHOV_2', marketplace: MarketplaceType.WILDBERRIES },
+  {
+    name: 'Чашниково',
+    code: 'WB_CHASHNIKOVO',
+    marketplace: MarketplaceType.WILDBERRIES,
+    operatingHours: 'Вторник / Четверг / Суббота',
+  },
+  {
+    name: 'Чехов 1',
+    code: 'WB_CHEKHOV_1',
+    marketplace: MarketplaceType.WILDBERRIES,
+    operatingHours: 'Вторник / Четверг / Суббота',
+  },
+  {
+    name: 'Чехов 2',
+    code: 'WB_CHEKHOV_2',
+    marketplace: MarketplaceType.WILDBERRIES,
+    operatingHours: 'Вторник / Четверг / Суббота',
+  },
 ];
 
 async function main() {
@@ -34,12 +94,14 @@ async function main() {
       update: {
         name: wh.name,
         marketplace: wh.marketplace,
+        operatingHours: wh.operatingHours,
         isActive: true,
       },
       create: {
         name: wh.name,
         code: wh.code,
         marketplace: wh.marketplace,
+        operatingHours: wh.operatingHours,
         address: wh.name,
         city: 'Москва и МО',
         isActive: true,
