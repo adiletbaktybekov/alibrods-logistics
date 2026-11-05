@@ -12,7 +12,8 @@ import { getCurrentUser } from './auth';
 const COOKIE_NAME = 'alibros_token';
 
 export async function verifyMiniAppDataAction(initData: string) {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN || '';
+  const botToken =
+    process.env.TELEGRAM_CLIENT_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '';
   const validation = validateTelegramInitData(initData, botToken);
 
   async function getSafeCurrentUser() {

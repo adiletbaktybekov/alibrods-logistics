@@ -48,7 +48,8 @@ function isDuplicateCallback(callbackId: string): boolean {
 export async function POST(req: NextRequest) {
   // 1. Verify Telegram Webhook Secret Token if configured
   const secretHeader = req.headers.get('x-telegram-bot-api-secret-token');
-  const configuredSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+  const configuredSecret =
+    process.env.TELEGRAM_BOT_WEBHOOK_SECRET || process.env.TELEGRAM_WEBHOOK_SECRET;
 
   if (configuredSecret && secretHeader !== configuredSecret) {
     logger.warn({ receivedHeader: secretHeader }, 'Invalid Telegram webhook secret token');

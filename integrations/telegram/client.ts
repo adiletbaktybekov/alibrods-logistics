@@ -146,7 +146,8 @@ let botClientInstance: TelegramBotClient | null = null;
 
 export function getTelegramBotClient(): TelegramBotClient {
   if (!botClientInstance) {
-    const token = process.env.TELEGRAM_BOT_TOKEN || '';
+    const token =
+      process.env.TELEGRAM_DRIVER_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '';
     botClientInstance = new TelegramBotClient(token);
   }
   return botClientInstance;
