@@ -1,6 +1,12 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import crypto from 'crypto';
 import { validateTelegramInitData } from '@/lib/security/telegram';
+import {
+  getDriverTelegramBotClient,
+  getClientTelegramBotClient,
+  getManagerTelegramBotClient,
+  resetTelegramBotClient,
+} from '@/integrations/telegram/client';
 
 describe('Telegram Security (HMAC-SHA256 initData)', () => {
   const botToken = '123456789:ABCdefGHIjklMNOpqrSTUvwxYZ_test';
@@ -84,5 +90,48 @@ describe('Telegram Security (HMAC-SHA256 initData)', () => {
     const result = validateTelegramInitData('auth_date=123456&user={}', botToken);
     expect(result.isValid).toBe(false);
     expect(result.error).toContain('Missing hash');
+  });
+
+  describe('Multi-Bot Architecture (Client, Driver, Manager)', () => {
+    const originalEnv = { ...process.env };
+
+    afterEach(() => {
+      process.env = { ...originalEnv };
+      resetTelegramBotClient();
+    });
+
+    it('instantiates dedicated bots from their respective environment variables', async () => {
+      process.env.TELEGRAM_DRIVER_BOT_TOKEN = '111:driver_token';
+      process.env.TELEGRAM_CLIENT_BOT_TOKEN = '222:client_token';
+      process.env.TELEGRAM_MANAGER_BOT_TOKEN = '333:manager_token';
+      resetTelegramBotClient();
+
+      const driverBot = getDriverTelegramBotClient();
+      const clientBot = getClientTelegramBotClient();
+      const managerBot = getManagerTelegramBotClient();
+
+      expect(driverBot).toBeDefined();
+      expect(clientBot).toBeDefined();
+      expect(managerBot).toBeDefined();
+
+      // Ensure distinct instances
+      expect(driverBot).not.toBe(clientBot);
+      expect(driverBot).not.toBe(managerBot);
+      expect(clientBot).not.toBe(managerBot);
+    });
+
+    it('falls back to TELEGRAM_BOT_TOKEN when specific bot token is not defined', () => {
+      delete process.env.TELEGRAM_DRIVER_BOT_TOKEN;
+      delete process.env.TELEGRAM_CLIENT_BOT_TOKEN;
+      delete process.env.TELEGRAM_MANAGER_BOT_TOKEN;
+      process.env.TELEGRAM_BOT_TOKEN = '999:default_shared_token';
+      resetTelegramBotClient();
+
+      const driverBot = getDriverTelegramBotClient();
+      const clientBot = getClientTelegramBotClient();
+
+      expect(driverBot).toBeDefined();
+      expect(clientBot).toBeDefined();
+    });
   });
 });

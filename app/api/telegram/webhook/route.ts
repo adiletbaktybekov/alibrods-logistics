@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { TelegramBotService, TelegramIncomingUpdate } from '@/modules/telegram/bot.service';
-import { logger } from '@/lib/logger';
+import { logger, safeLogError } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 
@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {
-    logger.error({ err }, 'Error processing Telegram webhook request');
+    safeLogError(err, 'Error processing Telegram webhook request');
     // Return 200 to prevent Telegram from looping retries indefinitely
     return NextResponse.json({ ok: true, errorHandled: true });
   }
