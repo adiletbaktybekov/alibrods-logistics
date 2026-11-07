@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { redirect } from 'next/navigation';
 import { requireStaffUser, getStaffProfileAction } from '@/app/actions/admin';
 import { logoutAction } from '@/app/actions/auth';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -11,7 +12,12 @@ import { PasswordChangeForm } from './password-form';
 export const dynamic = 'force-dynamic';
 
 export default async function AdminProfilePage() {
-  const staff = await requireStaffUser();
+  let staff;
+  try {
+    staff = await requireStaffUser();
+  } catch {
+    redirect('/login');
+  }
   const dbUser = await getStaffProfileAction();
 
   const roleNames: Record<UserRole, string> = {

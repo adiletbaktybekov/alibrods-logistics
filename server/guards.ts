@@ -34,7 +34,11 @@ export function requirePermission(context: SecurityContext, permission: Permissi
  */
 export function assertOrderAccess(
   user: AuthenticatedUser,
-  order: { clientId: string; assignments?: { driver: { userId: string } }[] }
+  order: {
+    clientId: string;
+    client?: { userId?: string | null } | null;
+    assignments?: { driver?: { userId?: string | null } | null }[];
+  }
 ): void {
   // Elevated roles have broader visibility
   if (['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'].includes(user.role)) {
@@ -43,7 +47,8 @@ export function assertOrderAccess(
 
   // Client verification
   if (user.role === 'CLIENT') {
-    if (order.clientId !== user.id) {
+    const isOwner = order.clientId === user.id || order.client?.userId === user.id;
+    if (!isOwner) {
       throw new ForbiddenError('Clients can only view and manage their own orders');
     }
     return;
@@ -51,7 +56,7 @@ export function assertOrderAccess(
 
   // Driver verification
   if (user.role === 'DRIVER') {
-    const isAssigned = order.assignments?.some((a) => a.driver.userId === user.id);
+    const isAssigned = order.assignments?.some((a) => a.driver?.userId === user.id);
     if (!isAssigned) {
       throw new ForbiddenError('Drivers can only access orders explicitly assigned to them');
     }

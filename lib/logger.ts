@@ -34,3 +34,44 @@ export const logger = pino({
 });
 
 export type Logger = typeof logger;
+
+/**
+ * Safely logs errors without triggering false-alarm critical alerts for expected
+ * authentication redirects, expired sessions, or insufficient permissions.
+ */
+export function safeLogError(
+  err: unknown,
+  contextMessage: string,
+  extraMeta?: Record<string, unknown>
+): void {
+  if (typeof err === 'object' && err !== null) {
+    // Check if error is an expected redirect or auth challenge
+    const digest = (err as { digest?: unknown }).digest;
+    if (typeof digest === 'string' && (digest.startsWith('NEXT_REDIRECT') || digest.startsWith('NEXT_NOT_FOUND'))) {
+      // Next.js intentional control flow: do not log as error
+      logger.debug({ digest, ...extraMeta }, `${contextMessage} (Next.js navigation redirect)`);
+      return;
+    }
+
+    const name = (err as Error).name;
+    const code = (err as { code?: unknown }).code;
+    if (
+      name === 'UnauthorizedError' ||
+      name === 'ForbiddenError' ||
+      code === 'UNAUTHORIZED' ||
+      code === 'FORBIDDEN'
+    ) {
+      logger.warn(
+        {
+          errName: name,
+          errMessage: (err as Error).message,
+          ...extraMeta,
+        },
+        `${contextMessage}: access challenge`
+      );
+      return;
+    }
+  }
+
+  logger.error({ err, ...extraMeta }, contextMessage);
+}
