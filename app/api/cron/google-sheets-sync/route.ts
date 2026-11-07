@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleSheetsSyncService } from '@/modules/integrations/google-sheets-sync.service';
-import { logger } from '@/lib/logger';
+import { logger, safeLogError } from '@/lib/logger';
 import { UserRole } from '@prisma/client';
 
 export const dynamic = 'force-dynamic';
@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
       ...result,
     });
   } catch (error) {
-    logger.error({ err: error }, 'Unhandled error in cron Google Sheets sync');
+    safeLogError(error, 'Unhandled error in cron Google Sheets sync');
     return NextResponse.json(
       {
         success: false,
