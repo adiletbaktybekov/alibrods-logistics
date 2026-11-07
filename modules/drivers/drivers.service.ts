@@ -28,7 +28,103 @@ export type DriverListItem = Prisma.DriverProfileGetPayload<{
   };
 }>;
 
+import { sanitizePaginationParams } from '@/lib/pagination';
+
+export interface ListDriversParams {
+  search?: string;
+  isAvailable?: boolean;
+  isActive?: boolean;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface PaginatedDriversResult {
+  items: DriverListItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
 export class DriversService {
+  public static async listWithPagination(
+    params: ListDriversParams = {}
+  ): Promise<PaginatedDriversResult> {
+    const { page, pageSize, skip } = sanitizePaginationParams(params.page, params.pageSize);
+
+    if (!process.env.DATABASE_URL) {
+      return { items: [], total: 0, page, pageSize, totalPages: 1 };
+    }
+
+    try {
+      const where: Prisma.DriverProfileWhereInput = {};
+
+      if (params.search && params.search.trim() !== '') {
+        const query = params.search.trim();
+        where.OR = [
+          { fullName: { contains: query, mode: 'insensitive' } },
+          { vehicleModel: { contains: query, mode: 'insensitive' } },
+          { vehiclePlateNumber: { contains: query, mode: 'insensitive' } },
+          { user: { phone: { contains: query, mode: 'insensitive' } } },
+          { user: { email: { contains: query, mode: 'insensitive' } } },
+        ];
+      }
+
+      if (typeof params.isAvailable === 'boolean') {
+        where.isAvailable = params.isAvailable;
+      }
+
+      if (typeof params.isActive === 'boolean') {
+        where.user = {
+          isActive: params.isActive,
+        };
+      }
+
+      const [items, total] = await Promise.all([
+        prisma.driverProfile.findMany({
+          where,
+          skip,
+          take: pageSize,
+          orderBy: { createdAt: 'desc' },
+          include: {
+            user: {
+              select: {
+                id: true,
+                phone: true,
+                email: true,
+                isActive: true,
+                telegramAccount: {
+                  select: {
+                    telegramId: true,
+                    username: true,
+                  },
+                },
+              },
+            },
+            _count: {
+              select: {
+                assignments: true,
+              },
+            },
+          },
+        }),
+        prisma.driverProfile.count({ where }),
+      ]);
+
+      const totalPages = total > 0 ? Math.ceil(total / pageSize) : 1;
+
+      return {
+        items,
+        total,
+        page,
+        pageSize,
+        totalPages,
+      };
+    } catch {
+      return { items: [], total: 0, page, pageSize, totalPages: 1 };
+    }
+  }
+
   public static async listAll(): Promise<DriverListItem[]> {
     if (!process.env.DATABASE_URL) return [] as DriverListItem[];
     try {

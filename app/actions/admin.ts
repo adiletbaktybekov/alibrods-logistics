@@ -182,9 +182,15 @@ export async function saveManagerNotesAction(orderId: string, notes: string) {
   }
 }
 
-export async function getDriversListAction() {
+export async function getDriversListAction(params: {
+  search?: string;
+  isAvailable?: boolean;
+  isActive?: boolean;
+  page?: number;
+  pageSize?: number;
+} = {}) {
   await requireStaffUser();
-  return DriversService.listAll();
+  return DriversService.listWithPagination(params);
 }
 
 export async function createDriverAction(prevState: unknown, formData: FormData) {

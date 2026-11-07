@@ -30,7 +30,7 @@ export default async function AdminOrderDetailPage({ params }: AdminOrderDetailP
     notFound();
   }
 
-  const drivers = await getDriversListAction();
+  const { items: drivers } = await getDriversListAction();
   const currentAssignment = order.assignments?.[0];
   const assignedDriver = currentAssignment?.driver;
 
