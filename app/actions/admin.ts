@@ -5,11 +5,21 @@ import { OrdersService } from '@/modules/orders/orders.service';
 import { DriversService } from '@/modules/drivers/drivers.service';
 import { ClientsService } from '@/modules/clients/clients.service';
 import { registerDriverSchema } from '@/modules/drivers/drivers.dto';
-import { OrderStatus, UserRole } from '@prisma/client';
+import { OrderStatus, UserRole, AuditAction } from '@prisma/client';
 import { ForbiddenError, UnauthorizedError } from '@/lib/errors';
 import { revalidatePath } from 'next/cache';
+import { cookies } from 'next/headers';
 import { prisma } from '@/database/prisma';
 import { sanitizePaginationParams } from '@/lib/pagination';
+import { hashPassword, verifyPassword, validatePasswordComplexity } from '@/lib/security/password';
+import { RateLimiter } from '@/lib/security/rate-limit';
+import { AuditService } from '@/modules/audit/audit.service';
+import { signAuthToken } from '@/lib/security/jwt';
+
+const passwordChangeRateLimiter = new RateLimiter({
+  windowMs: 15 * 60 * 1000,
+  maxRequests: 5,
+});
 
 const STAFF_ROLES: UserRole[] = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
 
@@ -318,6 +328,148 @@ export async function getStaffProfileAction() {
       },
     },
   });
+}
+
+export async function changePasswordAction(prevState: unknown, formData: FormData) {
+  const user = await requireStaffUser();
+
+  const currentPassword = formData.get('currentPassword')?.toString() || '';
+  const newPassword = formData.get('newPassword')?.toString() || '';
+  const confirmPassword = formData.get('confirmPassword')?.toString() || '';
+
+  // 1. Rate limiting check (max 5 attempts per 15 min per staff user)
+  const rateLimit = passwordChangeRateLimiter.check(user.id);
+  if (!rateLimit.allowed) {
+    const minutesLeft = Math.max(1, Math.ceil((rateLimit.resetAt - Date.now()) / 60000));
+    return {
+      success: false,
+      error: `Слишком много попыток смены пароля. Пожалуйста, подождите ${minutesLeft} мин.`,
+    };
+  }
+
+  // 2. Presence checks
+  if (!currentPassword || !newPassword || !confirmPassword) {
+    return {
+      success: false,
+      error: 'Заполните все обязательные поля формы смены пароля',
+    };
+  }
+
+  // 3. Confirmation check
+  if (newPassword !== confirmPassword) {
+    return {
+      success: false,
+      error: 'Новый пароль и подтверждение не совпадают',
+    };
+  }
+
+  // 4. Distinction from current password
+  if (newPassword === currentPassword) {
+    return {
+      success: false,
+      error: 'Новый пароль не должен совпадать с текущим паролем',
+    };
+  }
+
+  // 5. Complexity criteria validation (same 5 criteria as SUPER_ADMIN)
+  const complexity = validatePasswordComplexity(newPassword);
+  if (!complexity.isValid) {
+    return {
+      success: false,
+      error: complexity.error || 'Пароль не отвечает требованиям безопасности',
+    };
+  }
+
+  // 6. DB check
+  if (!process.env.DATABASE_URL) {
+    return {
+      success: false,
+      error: 'База данных недоступна',
+    };
+  }
+
+  const dbUser = await prisma.user.findUnique({
+    where: { id: user.id },
+    select: {
+      id: true,
+      email: true,
+      phone: true,
+      role: true,
+      passwordHash: true,
+      isActive: true,
+    },
+  });
+
+  if (!dbUser || !dbUser.isActive) {
+    return {
+      success: false,
+      error: 'Учётная запись не найдена или деактивирована',
+    };
+  }
+
+  if (!dbUser.passwordHash) {
+    return {
+      success: false,
+      error: 'У данной учётной записи не установлен пароль',
+    };
+  }
+
+  // 7. Verify current password
+  const isCurrentValid = await verifyPassword(currentPassword, dbUser.passwordHash);
+  if (!isCurrentValid) {
+    return {
+      success: false,
+      error: 'Неверный текущий пароль',
+    };
+  }
+
+  // 8. Hash new password with Argon2id
+  const newHash = await hashPassword(newPassword);
+
+  // 9. Update DB
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { passwordHash: newHash },
+  });
+
+  // 10. Audit log entry
+  await AuditService.log({
+    userId: user.id,
+    action: AuditAction.UPDATE,
+    resource: 'User',
+    resourceId: user.id,
+    metadata: {
+      event: 'PASSWORD_CHANGE',
+      role: user.role,
+    },
+  });
+
+  // 11. Refresh session cookie seamlessly
+  try {
+    const token = await signAuthToken({
+      userId: dbUser.id,
+      role: dbUser.role,
+      email: dbUser.email,
+      phone: dbUser.phone,
+    });
+    const cookieStore = await cookies();
+    cookieStore.set('alibros_token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 7 * 24 * 60 * 60,
+    });
+  } catch {
+    // Cookie refresh failure is non-blocking
+  }
+
+  revalidatePath('/admin/profile');
+
+  return {
+    success: true,
+    message: 'Пароль успешно обновлён',
+  };
 }
 
 

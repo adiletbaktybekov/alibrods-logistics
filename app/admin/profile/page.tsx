@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { UserRole } from '@prisma/client';
 import { formatDateTime } from '@/lib/utils';
+import { PasswordChangeForm } from './password-form';
 
 export const dynamic = 'force-dynamic';
 
@@ -122,7 +123,7 @@ export default async function AdminProfilePage() {
             </div>
           </div>
 
-          <div className="border-t border-slate-100 pt-3">
+            <div className="border-t border-slate-100 pt-3">
             <span className="text-slate-500 block">Политика безопасности:</span>
             <p className="text-slate-600 mt-0.5">
               Все действия сотрудника в административной панели логируются в неизменяемый журнал аудита (`AuditLog`) с фиксацией IP-адреса, времени и исходного/нового состояния объектов.
@@ -130,6 +131,9 @@ export default async function AdminProfilePage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Password Change Form */}
+      <PasswordChangeForm />
 
       {/* Session Management */}
       <Card className="border-slate-200 shadow-sm bg-white">

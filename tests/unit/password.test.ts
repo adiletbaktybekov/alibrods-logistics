@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { hashPassword, verifyPassword } from '@/lib/security/password';
+import { hashPassword, verifyPassword, validatePasswordComplexity } from '@/lib/security/password';
+import { validatePasswordComplexity as validateAdminPassword } from '../../scripts/init-admin';
 
 describe('Password Security (Argon2id)', () => {
   it('should successfully hash a valid password', async () => {
@@ -31,9 +32,20 @@ describe('Password Security (Argon2id)', () => {
   });
 });
 
-import { validatePasswordComplexity } from '../../scripts/init-admin';
-
 describe('Admin Password Complexity Validation', () => {
+  it('should verify parity between lib/security/password and init-admin validator', () => {
+    const testCases = [
+      'AliBros@Staging2026!',
+      'short',
+      'nouppercase123456789!',
+      'NOLOWERCASE123456789!',
+      'NoDigitsHereSpecialChars!!',
+      'NoSpecialCharsHere12345678',
+    ];
+    for (const tc of testCases) {
+      expect(validatePasswordComplexity(tc).isValid).toBe(validateAdminPassword(tc).isValid);
+    }
+  });
   it('should accept a compliant password (>=12 chars, uppercase, lowercase, number, special char)', () => {
     const result = validatePasswordComplexity('AliBros@Staging2026!');
     expect(result.isValid).toBe(true);
