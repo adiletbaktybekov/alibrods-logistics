@@ -255,3 +255,43 @@ export async function getGoogleSheetsStatusAction() {
   return GoogleSheetsSyncService.getStatus();
 }
 
+export async function getAdminWarehousesAction() {
+  await requireStaffUser();
+  if (!process.env.DATABASE_URL) {
+    return [];
+  }
+  return prisma.warehouse.findMany({
+    where: { isActive: true },
+    orderBy: { name: 'asc' },
+  });
+}
+
+export async function getStaffProfileAction() {
+  const staff = await requireStaffUser();
+  if (!process.env.DATABASE_URL) {
+    return null;
+  }
+  return prisma.user.findUnique({
+    where: { id: staff.id },
+    select: {
+      id: true,
+      email: true,
+      phone: true,
+      role: true,
+      isActive: true,
+      isVerified: true,
+      createdAt: true,
+      lastLoginAt: true,
+      managerProfile: {
+        select: {
+          fullName: true,
+          department: true,
+          workPhone: true,
+          notes: true,
+        },
+      },
+    },
+  });
+}
+
+

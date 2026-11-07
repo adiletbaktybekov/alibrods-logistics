@@ -1,34 +1,90 @@
 import * as React from 'react';
+import { getAdminWarehousesAction } from '@/app/actions/admin';
 import { CONFIRMED_WAREHOUSES, WarehouseSchedule } from '@/modules/warehouses/warehouses.service';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Warehouse } from '@prisma/client';
 
 export const dynamic = 'force-dynamic';
 
-export default function AdminWarehousesPage() {
+interface EnrichedWarehouse extends Warehouse {
+  schedule: WarehouseSchedule;
+  scheduleDescription: string;
+}
+
+function resolveWarehouseSchedule(wh: Warehouse): {
+  schedule: WarehouseSchedule;
+  scheduleDescription: string;
+} {
+  const confirmed = CONFIRMED_WAREHOUSES.find((c) => c.code === wh.code || c.name === wh.name);
+  if (confirmed) {
+    return {
+      schedule: confirmed.schedule,
+      scheduleDescription: confirmed.scheduleDescription,
+    };
+  }
+
+  const hours = (wh.operatingHours || '').toLowerCase();
+  if (hours.includes('вторник') || hours.includes('четверг') || hours.includes('суббота')) {
+    return { schedule: 'TTS', scheduleDescription: 'Вторник / четверг / суббота' };
+  }
+  if (hours.includes('понедельник') || hours.includes('среда') || hours.includes('пятница')) {
+    return { schedule: 'MWF', scheduleDescription: 'Понедельник / среда / пятница' };
+  }
+  return { schedule: 'DAILY', scheduleDescription: 'Ежедневно' };
+}
+
+export default async function AdminWarehousesPage() {
+  let warehouses: Warehouse[] = [];
+  let fetchError: string | null = null;
+
+  try {
+    warehouses = await getAdminWarehousesAction();
+  } catch (err: unknown) {
+    fetchError = err instanceof Error ? err.message : 'Не удалось загрузить справочник складов';
+  }
+
+  const enrichedWarehouses: EnrichedWarehouse[] = warehouses
+    .filter((w) => w.isActive)
+    .map((w) => {
+      const scheduleInfo = resolveWarehouseSchedule(w);
+      return {
+        ...w,
+        ...scheduleInfo,
+      };
+    });
+
+  const dailyWarehouses = enrichedWarehouses.filter((w) => w.schedule === 'DAILY');
+  const mwfWarehouses = enrichedWarehouses.filter((w) => w.schedule === 'MWF');
+  const ttsWarehouses = enrichedWarehouses.filter((w) => w.schedule === 'TTS');
+
   const groups: {
     schedule: WarehouseSchedule;
     title: string;
     description: string;
     badgeColor: string;
+    items: EnrichedWarehouse[];
   }[] = [
     {
       schedule: 'DAILY',
-      title: 'Ежедневные склады (7)',
+      title: `Ежедневные склады (${dailyWarehouses.length})`,
       description: 'Приём и доставка осуществляются каждый день, включая выходные',
       badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+      items: dailyWarehouses,
     },
     {
       schedule: 'MWF',
-      title: 'Понедельник / Среда / Пятница (2)',
+      title: `Понедельник / Среда / Пятница (${mwfWarehouses.length})`,
       description: 'Рейсы выполняются 3 раза в неделю по нечётным дням',
       badgeColor: 'bg-blue-50 text-blue-700 border-blue-200',
+      items: mwfWarehouses,
     },
     {
       schedule: 'TTS',
-      title: 'Вторник / Четверг / Суббота (3)',
+      title: `Вторник / Четверг / Суббота (${ttsWarehouses.length})`,
       description: 'Рейсы выполняются 3 раза в неделю по чётным дням',
       badgeColor: 'bg-amber-50 text-amber-700 border-amber-200',
+      items: ttsWarehouses,
     },
   ];
 
@@ -41,7 +97,7 @@ export default function AdminWarehousesPage() {
             Склады и графики поставок
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            Официальный подтверждённый перечень 12 складов маркетплейсов WB и Ozon
+            Подтверждённые склады маркетплейсов WB и Ozon в базе данных ({enrichedWarehouses.length})
           </p>
         </div>
         <div>
@@ -50,6 +106,12 @@ export default function AdminWarehousesPage() {
           </Badge>
         </div>
       </div>
+
+      {fetchError && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-xs text-rose-800">
+          ⚠️ {fetchError}. Пожалуйста, обновите страницу.
+        </div>
+      )}
 
       {/* Info Callout */}
       <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-4 text-xs text-blue-900 flex items-start gap-3">
@@ -64,11 +126,21 @@ export default function AdminWarehousesPage() {
       </div>
 
       {/* Warehouse Groups */}
-      <div className="space-y-6">
-        {groups.map((group) => {
-          const warehouses = CONFIRMED_WAREHOUSES.filter((w) => w.schedule === group.schedule);
-
-          return (
+      {enrichedWarehouses.length === 0 && !fetchError ? (
+        <Card className="border-slate-200 shadow-sm bg-white p-12 text-center">
+          <div className="mx-auto w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 mb-3">
+            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+            </svg>
+          </div>
+          <h3 className="text-sm font-semibold text-slate-900">Склады не найдены</h3>
+          <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1">
+            В базе данных пока нет активных складов маркетплейсов.
+          </p>
+        </Card>
+      ) : (
+        <div className="space-y-6">
+          {groups.map((group) => (
             <Card key={group.schedule} className="border-slate-200 shadow-sm bg-white overflow-hidden">
               <CardHeader className="pb-3 border-b border-slate-100 bg-slate-50/50">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
@@ -77,13 +149,13 @@ export default function AdminWarehousesPage() {
                     <p className="text-xs text-slate-500 mt-0.5">{group.description}</p>
                   </div>
                   <Badge variant="outline" className={`text-xs ${group.badgeColor}`}>
-                    {warehouses.length} склада
+                    {group.items.length} склада
                   </Badge>
                 </div>
               </CardHeader>
               <CardContent className="pt-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {warehouses.map((wh) => (
+                  {group.items.map((wh) => (
                     <div
                       key={wh.id}
                       className="rounded-xl border border-slate-200 p-4 hover:border-brand-300 hover:shadow-xs transition-all bg-white flex flex-col justify-between"
@@ -103,6 +175,11 @@ export default function AdminWarehousesPage() {
                         <div className="font-mono text-[11px] text-slate-400">
                           Код: {wh.code}
                         </div>
+                        {wh.city && (
+                          <div className="text-[11px] text-slate-500 mt-0.5">
+                            {wh.city}
+                          </div>
+                        )}
                       </div>
 
                       <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
@@ -114,9 +191,10 @@ export default function AdminWarehousesPage() {
                 </div>
               </CardContent>
             </Card>
-          );
-        })}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
+

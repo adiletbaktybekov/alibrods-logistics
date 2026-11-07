@@ -1,15 +1,17 @@
 import * as React from 'react';
-import { requireStaffUser } from '@/app/actions/admin';
+import { requireStaffUser, getStaffProfileAction } from '@/app/actions/admin';
 import { logoutAction } from '@/app/actions/auth';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { UserRole } from '@prisma/client';
+import { formatDateTime } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
 export default async function AdminProfilePage() {
-  const user = await requireStaffUser();
+  const staff = await requireStaffUser();
+  const dbUser = await getStaffProfileAction();
 
   const roleNames: Record<UserRole, string> = {
     SUPER_ADMIN: 'Главный администратор (Superadmin)',
@@ -29,6 +31,14 @@ export default async function AdminProfilePage() {
     CLIENT: 'Клиентский кабинет оформления поставок.',
   };
 
+  const currentRole = dbUser?.role || staff.role;
+  const fullName = dbUser?.managerProfile?.fullName || 'Не указано';
+  const department = dbUser?.managerProfile?.department || 'Не указан';
+  const email = dbUser?.email || staff.email || 'Не указан';
+  const phone = dbUser?.phone || dbUser?.managerProfile?.workPhone || staff.phone || 'Не указан';
+  const userId = dbUser?.id || staff.id;
+  const lastLogin = dbUser?.lastLoginAt ? formatDateTime(dbUser.lastLoginAt) : 'Текущая сессия';
+
   return (
     <div className="space-y-6 max-w-3xl">
       {/* Header */}
@@ -46,39 +56,68 @@ export default async function AdminProfilePage() {
         <CardHeader className="pb-3 border-b border-slate-100 flex flex-row items-center justify-between">
           <CardTitle className="text-base text-slate-900">Данные аккаунта</CardTitle>
           <Badge variant="outline" className="text-xs bg-brand-50 text-brand-700 border-brand-200">
-            {user.role}
+            {currentRole}
           </Badge>
         </CardHeader>
         <CardContent className="pt-4 space-y-4 text-xs">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
+              <span className="text-slate-500 block">ФИО сотрудника:</span>
+              <span className="font-semibold text-slate-900 text-sm">
+                {fullName}
+              </span>
+            </div>
+
+            <div>
+              <span className="text-slate-500 block">Подразделение / Отдел:</span>
+              <span className="font-semibold text-slate-900 text-sm">
+                {department}
+              </span>
+            </div>
+
+            <div>
               <span className="text-slate-500 block">Роль в системе:</span>
               <span className="font-semibold text-slate-900 text-sm">
-                {roleNames[user.role] || user.role}
+                {roleNames[currentRole] || currentRole}
               </span>
               <p className="text-[11px] text-slate-500 mt-1">
-                {roleDescriptions[user.role]}
+                {roleDescriptions[currentRole]}
               </p>
             </div>
 
             <div>
               <span className="text-slate-500 block">ID пользователя:</span>
-              <span className="font-mono text-slate-700 bg-slate-50 px-2 py-1 rounded border border-slate-200 inline-block mt-0.5">
-                {user.id}
-              </span>
-            </div>
-
-            <div>
-              <span className="text-slate-500 block">Номер телефона:</span>
-              <span className="font-mono font-medium text-slate-900 text-sm">
-                {user.phone || 'Не указан'}
+              <span className="font-mono text-slate-700 bg-slate-50 px-2 py-1 rounded border border-slate-200 inline-block mt-0.5 text-[11px]">
+                {userId}
               </span>
             </div>
 
             <div>
               <span className="text-slate-500 block">Рабочий Email:</span>
               <span className="font-mono font-medium text-slate-900 text-sm">
-                {user.email || 'Не указан'}
+                {email}
+              </span>
+            </div>
+
+            <div>
+              <span className="text-slate-500 block">Номер телефона:</span>
+              <span className="font-mono font-medium text-slate-900 text-sm">
+                {phone}
+              </span>
+            </div>
+
+            <div>
+              <span className="text-slate-500 block">Последний вход:</span>
+              <span className="text-slate-700 text-xs">
+                {lastLogin}
+              </span>
+            </div>
+
+            <div>
+              <span className="text-slate-500 block">Статус учётной записи:</span>
+              <span className="inline-flex items-center gap-1.5 font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded text-xs mt-0.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                {dbUser?.isActive !== false ? 'Активен' : 'Заблокирован'}
               </span>
             </div>
           </div>
@@ -119,3 +158,4 @@ export default async function AdminProfilePage() {
     </div>
   );
 }
+
