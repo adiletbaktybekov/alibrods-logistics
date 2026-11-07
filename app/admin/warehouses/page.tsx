@@ -1,9 +1,11 @@
 import * as React from 'react';
+import { redirect } from 'next/navigation';
 import { getAdminWarehousesAction } from '@/app/actions/admin';
 import { CONFIRMED_WAREHOUSES, WarehouseSchedule } from '@/modules/warehouses/warehouses.service';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Warehouse } from '@prisma/client';
+import { isExpectedAuthError } from '@/lib/errors';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,6 +43,9 @@ export default async function AdminWarehousesPage() {
   try {
     warehouses = await getAdminWarehousesAction();
   } catch (err: unknown) {
+    if (isExpectedAuthError(err)) {
+      redirect('/login');
+    }
     fetchError = err instanceof Error ? err.message : 'Не удалось загрузить справочник складов';
   }
 

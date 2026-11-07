@@ -1,7 +1,8 @@
 import * as React from 'react';
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { getAdminOrdersAction } from '@/app/actions/admin';
-import { WarehousesService } from '@/modules/warehouses/warehouses.service';
+import { WarehousesService, WarehouseItem } from '@/modules/warehouses/warehouses.service';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { StatusBadge, STATUS_LABELS } from '@/components/ui/status-badge';
@@ -10,6 +11,10 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { formatDateTime } from '@/lib/utils';
 import { OrderStatus } from '@prisma/client';
 import { buildOrdersPaginationUrl, calculateDisplayRange } from '@/lib/pagination';
+import { isExpectedAuthError } from '@/lib/errors';
+
+type AdminOrdersResult = Awaited<ReturnType<typeof getAdminOrdersAction>>;
+type AdminOrderItem = AdminOrdersResult['items'][number];
 
 export const dynamic = 'force-dynamic';
 
@@ -32,17 +37,36 @@ export default async function AdminOrdersPage({ searchParams }: AdminOrdersPageP
   const rawPage = Number(params.page);
   const requestedPage = Number.isInteger(rawPage) && rawPage > 0 ? rawPage : 1;
 
-  const [{ items, total, page, pageSize, totalPages }, warehouses] = await Promise.all([
-    getAdminOrdersAction({
-      search: search || undefined,
-      status: status || undefined,
-      warehouseId: warehouseId || undefined,
-      date: date || undefined,
-      page: requestedPage,
-      pageSize: 25,
-    }),
-    WarehousesService.list(),
-  ]);
+  let items: AdminOrderItem[] = [];
+  let total = 0;
+  let page = 1;
+  let pageSize = 25;
+  let totalPages = 1;
+  let warehouses: WarehouseItem[] = [];
+
+  try {
+    const [ordersResult, whList] = await Promise.all([
+      getAdminOrdersAction({
+        search: search || undefined,
+        status: status || undefined,
+        warehouseId: warehouseId || undefined,
+        date: date || undefined,
+        page: requestedPage,
+        pageSize: 25,
+      }),
+      WarehousesService.list(),
+    ]);
+    items = ordersResult.items;
+    total = ordersResult.total;
+    page = ordersResult.page;
+    pageSize = ordersResult.pageSize;
+    totalPages = ordersResult.totalPages;
+    warehouses = whList;
+  } catch (err: unknown) {
+    if (isExpectedAuthError(err)) {
+      redirect('/login');
+    }
+  }
 
   const { fromRecord, toRecord } = calculateDisplayRange(page, pageSize, items.length, total);
 

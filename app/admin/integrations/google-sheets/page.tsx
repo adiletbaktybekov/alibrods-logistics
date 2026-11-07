@@ -1,5 +1,6 @@
 import * as React from 'react';
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { getGoogleSheetsStatusAction } from '@/app/actions/admin';
 import { prisma } from '@/database/prisma';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -9,11 +10,20 @@ import { formatDateTime } from '@/lib/utils';
 import { SyncButton } from './sync-button';
 import { SHEET_HEADERS } from '@/integrations/google-sheets/client';
 import { OrderStatus, Prisma } from '@prisma/client';
+import { isExpectedAuthError } from '@/lib/errors';
 
 export const dynamic = 'force-dynamic';
 
 export default async function GoogleSheetsIntegrationPage() {
-  const status = await getGoogleSheetsStatusAction();
+  let status;
+  try {
+    status = await getGoogleSheetsStatusAction();
+  } catch (err: unknown) {
+    if (isExpectedAuthError(err)) {
+      redirect('/login');
+    }
+    throw err;
+  }
 
   let recentOrders: Array<{
     id: string;

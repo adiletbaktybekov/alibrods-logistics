@@ -1,6 +1,6 @@
 import * as React from 'react';
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { getClientDetailAction } from '@/app/actions/admin';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -8,6 +8,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { formatDateTime } from '@/lib/utils';
+import { isExpectedAuthError } from '@/lib/errors';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,7 +22,10 @@ export default async function AdminClientDetailPage({ params }: AdminClientDetai
   let client;
   try {
     client = await getClientDetailAction(id);
-  } catch {
+  } catch (err: unknown) {
+    if (isExpectedAuthError(err)) {
+      redirect('/login');
+    }
     notFound();
   }
 

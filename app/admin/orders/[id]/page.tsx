@@ -1,6 +1,6 @@
 import * as React from 'react';
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { getAdminOrderDetailAction, getDriversListAction } from '@/app/actions/admin';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { formatDateTime } from '@/lib/utils';
 import { OrderActions } from './order-actions';
 import { PhotoGallery } from '@/components/orders/photo-gallery';
+import { isExpectedAuthError } from '@/lib/errors';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,7 +23,10 @@ export default async function AdminOrderDetailPage({ params }: AdminOrderDetailP
   let order;
   try {
     order = await getAdminOrderDetailAction(id);
-  } catch {
+  } catch (err: unknown) {
+    if (isExpectedAuthError(err)) {
+      redirect('/login');
+    }
     notFound();
   }
 

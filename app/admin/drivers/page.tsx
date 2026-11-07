@@ -1,5 +1,6 @@
 import * as React from 'react';
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { getDriversListAction } from '@/app/actions/admin';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -9,6 +10,7 @@ import { DriverModal } from './driver-modal';
 import { DriverCodeButton } from './driver-code-button';
 import { buildDriversPaginationUrl, calculateDisplayRange } from '@/lib/pagination';
 import { PaginatedDriversResult } from '@/modules/drivers/drivers.service';
+import { isExpectedAuthError } from '@/lib/errors';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,6 +51,9 @@ export default async function AdminDriversPage({ searchParams }: AdminDriversPag
       pageSize: 25,
     });
   } catch (err: unknown) {
+    if (isExpectedAuthError(err)) {
+      redirect('/login');
+    }
     fetchError = err instanceof Error ? err.message : 'Не удалось загрузить список водителей';
   }
 

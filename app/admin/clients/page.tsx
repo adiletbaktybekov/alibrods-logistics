@@ -1,5 +1,6 @@
 import * as React from 'react';
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { getClientsListAction } from '@/app/actions/admin';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -7,6 +8,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { formatDateTime } from '@/lib/utils';
 import { buildClientsPaginationUrl, calculateDisplayRange } from '@/lib/pagination';
 import { PaginatedClientsResult } from '@/modules/clients/clients.service';
+import { isExpectedAuthError } from '@/lib/errors';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,6 +35,9 @@ export default async function AdminClientsPage({ searchParams }: AdminClientsPag
       pageSize: 25,
     });
   } catch (err: unknown) {
+    if (isExpectedAuthError(err)) {
+      redirect('/login');
+    }
     fetchError = err instanceof Error ? err.message : 'Не удалось загрузить реестр клиентов';
   }
 
