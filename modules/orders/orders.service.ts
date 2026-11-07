@@ -4,10 +4,47 @@ import { NotFoundError, ForbiddenError, ValidationError } from '@/lib/errors';
 import { assertOrderAccess } from '@/server/guards';
 import { AuthenticatedUser } from '@/types/rbac';
 import { AuditService } from '@/modules/audit/audit.service';
-import { AuditAction, OrderStatus, Prisma, UserRole } from '@prisma/client';
+import { AuditAction, MarketplaceType, OrderStatus, Prisma, UserRole } from '@prisma/client';
 import { WarehousesService } from '@/modules/warehouses/warehouses.service';
 import { CreateOrderDto, CreateClientOrderDto, UpdateOrderStatusDto, AssignDriverDto } from './orders.dto';
 import { NotificationDispatcherService } from '@/modules/notifications/dispatcher.service';
+
+export interface AdminDashboardDailyPoint {
+  date: string;
+  label: string;
+  count: number;
+  wbCount: number;
+  ozonCount: number;
+}
+
+export interface AdminDashboardStatusPoint {
+  status: OrderStatus;
+  label: string;
+  count: number;
+  percentage: number;
+  color: string;
+}
+
+export interface AdminDashboardStats {
+  total: number;
+  created: number;
+  pendingConfirmation: number;
+  confirmed: number;
+  inDelivery: number;
+  completed: number;
+  rejected: number;
+  totalBoxes: number;
+  totalPallets: number;
+  marketplaces: {
+    wildberries: number;
+    ozon: number;
+    wbPercentage: number;
+    ozonPercentage: number;
+  };
+  dailyTrend: AdminDashboardDailyPoint[];
+  statusDistribution: AdminDashboardStatusPoint[];
+  recentOrders: any[];
+}
 
 export class OrdersService {
   /**
@@ -632,19 +669,27 @@ export class OrdersService {
   /**
    * Admin dashboard statistics
    */
-  public static async getAdminDashboardStats() {
+  public static async getAdminDashboardStats(): Promise<AdminDashboardStats> {
+    const emptyStats: AdminDashboardStats = {
+      total: 0,
+      created: 0,
+      pendingConfirmation: 0,
+      confirmed: 0,
+      inDelivery: 0,
+      completed: 0,
+      rejected: 0,
+      totalBoxes: 0,
+      totalPallets: 0,
+      marketplaces: { wildberries: 0, ozon: 0, wbPercentage: 0, ozonPercentage: 0 },
+      dailyTrend: [],
+      statusDistribution: [],
+      recentOrders: [],
+    };
+
     if (!process.env.DATABASE_URL) {
-      return {
-        total: 0,
-        created: 0,
-        pendingConfirmation: 0,
-        confirmed: 0,
-        inDelivery: 0,
-        completed: 0,
-        rejected: 0,
-        recentOrders: [],
-      };
+      return emptyStats;
     }
+
     try {
       const inDeliveryStatuses: OrderStatus[] = [
         OrderStatus.ASSIGNED_TO_DRIVER,
@@ -662,6 +707,17 @@ export class OrdersService {
         OrderStatus.CANCELLED,
       ];
 
+      // Last 7 days points
+      const now = new Date();
+      const pastDays: Date[] = [];
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(now);
+        d.setDate(d.getDate() - i);
+        d.setHours(0, 0, 0, 0);
+        pastDays.push(d);
+      }
+      const sevenDaysAgo = pastDays[0];
+
       const [
         total,
         created,
@@ -670,7 +726,11 @@ export class OrdersService {
         inDelivery,
         completed,
         rejected,
+        wbCount,
+        ozonCount,
+        cargoAggregates,
         recentOrders,
+        recentOrdersForTrend,
       ] = await Promise.all([
         prisma.order.count(),
         prisma.order.count({ where: { status: OrderStatus.CREATED } }),
@@ -679,6 +739,14 @@ export class OrdersService {
         prisma.order.count({ where: { status: { in: inDeliveryStatuses } } }),
         prisma.order.count({ where: { status: { in: completedStatuses } } }),
         prisma.order.count({ where: { status: { in: rejectedStatuses } } }),
+        prisma.order.count({ where: { marketplace: MarketplaceType.WILDBERRIES } }),
+        prisma.order.count({ where: { marketplace: MarketplaceType.OZON } }),
+        prisma.order.aggregate({
+          _sum: {
+            totalBoxesCount: true,
+            totalPalletsCount: true,
+          },
+        }),
         prisma.order.findMany({
           take: 10,
           orderBy: { createdAt: 'desc' },
@@ -687,7 +755,56 @@ export class OrdersService {
             client: { select: { companyName: true, contactPerson: true, contactPhone: true } },
           },
         }),
+        prisma.order.findMany({
+          where: { createdAt: { gte: sevenDaysAgo } },
+          select: { createdAt: true, marketplace: true, status: true },
+        }),
       ]);
+
+      const totalBoxes = cargoAggregates._sum.totalBoxesCount || 0;
+      const totalPallets = cargoAggregates._sum.totalPalletsCount || 0;
+
+      const totalMarketplace = wbCount + ozonCount;
+      const wbPercentage = totalMarketplace > 0 ? Math.round((wbCount / totalMarketplace) * 100) : 0;
+      const ozonPercentage = totalMarketplace > 0 ? 100 - wbPercentage : 0;
+
+      // Map daily trend for each of the 7 days
+      const dailyTrend: AdminDashboardDailyPoint[] = pastDays.map((dayStart) => {
+        const nextDay = new Date(dayStart);
+        nextDay.setDate(nextDay.getDate() + 1);
+
+        const ordersInDay = recentOrdersForTrend.filter(
+          (o) => o.createdAt >= dayStart && o.createdAt < nextDay
+        );
+        const wb = ordersInDay.filter((o) => o.marketplace === MarketplaceType.WILDBERRIES).length;
+        const ozon = ordersInDay.filter((o) => o.marketplace === MarketplaceType.OZON).length;
+
+        const dayNum = String(dayStart.getDate()).padStart(2, '0');
+        const monthNum = String(dayStart.getMonth() + 1).padStart(2, '0');
+
+        return {
+          date: dayStart.toISOString().split('T')[0],
+          label: `${dayNum}.${monthNum}`,
+          count: ordersInDay.length,
+          wbCount: wb,
+          ozonCount: ozon,
+        };
+      });
+
+      // Status breakdown
+      const statusMap: { status: OrderStatus; label: string; count: number; color: string }[] = [
+        { status: OrderStatus.CREATED, label: 'Новые', count: created, color: 'bg-sky-500' },
+        { status: OrderStatus.PENDING_CONFIRMATION, label: 'Ожидают', count: pendingConfirmation, color: 'bg-amber-500' },
+        { status: OrderStatus.CONFIRMED, label: 'Подтверждены', count: confirmed, color: 'bg-indigo-500' },
+        { status: OrderStatus.IN_TRANSIT, label: 'В доставке', count: inDelivery, color: 'bg-blue-600' },
+        { status: OrderStatus.COMPLETED, label: 'Завершены', count: completed, color: 'bg-emerald-500' },
+        { status: OrderStatus.REJECTED_BY_MANAGER, label: 'Отклонены', count: rejected, color: 'bg-rose-500' },
+      ];
+
+      const statusDistribution: AdminDashboardStatusPoint[] = statusMap.map((s) => ({
+        ...s,
+        percentage: total > 0 ? Math.round((s.count / total) * 100) : 0,
+      }));
 
       return {
         total,
@@ -697,19 +814,20 @@ export class OrdersService {
         inDelivery,
         completed,
         rejected,
+        totalBoxes,
+        totalPallets,
+        marketplaces: {
+          wildberries: wbCount,
+          ozon: ozonCount,
+          wbPercentage,
+          ozonPercentage,
+        },
+        dailyTrend,
+        statusDistribution,
         recentOrders,
       };
     } catch {
-      return {
-        total: 0,
-        created: 0,
-        pendingConfirmation: 0,
-        confirmed: 0,
-        inDelivery: 0,
-        completed: 0,
-        rejected: 0,
-        recentOrders: [],
-      };
+      return emptyStats;
     }
   }
 
