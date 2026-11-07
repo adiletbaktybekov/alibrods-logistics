@@ -5,28 +5,54 @@ export interface OrderFilterParams {
   date?: string;
 }
 
-export function buildOrdersPaginationUrl(
+export function buildPaginationUrl(
+  basePath: string,
   targetPage: number,
-  filters: OrderFilterParams
+  filters: Record<string, string | undefined>
 ): string {
   const query = new URLSearchParams();
   if (targetPage > 1) {
     query.set('page', String(targetPage));
   }
-  if (filters.search) {
-    query.set('search', filters.search);
-  }
-  if (filters.status) {
-    query.set('status', filters.status);
-  }
-  if (filters.warehouseId) {
-    query.set('warehouseId', filters.warehouseId);
-  }
-  if (filters.date) {
-    query.set('date', filters.date);
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== undefined && value !== null && value.trim() !== '') {
+      query.set(key, value.trim());
+    }
   }
   const qs = query.toString();
-  return qs ? `/admin/orders?${qs}` : '/admin/orders';
+  return qs ? `${basePath}?${qs}` : basePath;
+}
+
+export function buildOrdersPaginationUrl(
+  targetPage: number,
+  filters: OrderFilterParams
+): string {
+  return buildPaginationUrl('/admin/orders', targetPage, {
+    search: filters.search,
+    status: filters.status,
+    warehouseId: filters.warehouseId,
+    date: filters.date,
+  });
+}
+
+export function buildClientsPaginationUrl(
+  targetPage: number,
+  filters: { search?: string }
+): string {
+  return buildPaginationUrl('/admin/clients', targetPage, {
+    search: filters.search,
+  });
+}
+
+export function buildDriversPaginationUrl(
+  targetPage: number,
+  filters: { search?: string; isAvailable?: string; isActive?: string }
+): string {
+  return buildPaginationUrl('/admin/drivers', targetPage, {
+    search: filters.search,
+    isAvailable: filters.isAvailable,
+    isActive: filters.isActive,
+  });
 }
 
 export function calculateDisplayRange(

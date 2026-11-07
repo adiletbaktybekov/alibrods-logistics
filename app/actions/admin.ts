@@ -223,9 +223,13 @@ export async function createDriverAction(prevState: unknown, formData: FormData)
   }
 }
 
-export async function getClientsListAction() {
+export async function getClientsListAction(params: {
+  search?: string;
+  page?: number;
+  pageSize?: number;
+} = {}) {
   await requireStaffUser();
-  return ClientsService.listAll();
+  return ClientsService.listWithPagination(params);
 }
 
 export async function getClientDetailAction(clientId: string) {
