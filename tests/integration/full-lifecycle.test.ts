@@ -7,7 +7,7 @@ import { WarehousesService, CONFIRMED_WAREHOUSES, isWarehouseOpenOnDate } from '
 import { SHEET_HEADERS, GoogleSheetsClient } from '@/integrations/google-sheets/client';
 import { AuthenticatedUser } from '@/types/rbac';
 import { OrderStatus, PhotoType, UserRole } from '@prisma/client';
-import { verifyAuthToken } from '@/lib/security/jwt';
+import { signAuthToken, verifyAuthToken } from '@/lib/security/jwt';
 import { assertOrderAccess } from '@/server/guards';
 
 describe('Phase 8: End-to-End Full Order Lifecycle & System Integration', () => {
@@ -71,9 +71,17 @@ describe('Phase 8: End-to-End Full Order Lifecycle & System Integration', () => 
     });
 
     it('should issue verifiable JWT tokens containing user role and identity', async () => {
-      // Test payload token verification
-      const token = await AuthService.login ? 'mock-token' : null;
+      const token = await signAuthToken({
+        userId: clientUser.id,
+        role: clientUser.role as UserRole,
+        email: clientUser.email,
+        phone: clientUser.phone,
+      });
       expect(token).toBeDefined();
+      const payload = await verifyAuthToken(token);
+      expect(payload).not.toBeNull();
+      expect(payload?.sub).toBe(clientUser.id);
+      expect(payload?.role).toBe(UserRole.CLIENT);
     });
   });
 

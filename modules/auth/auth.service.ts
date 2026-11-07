@@ -1,7 +1,7 @@
 import { prisma } from '@/database/prisma';
-import { hashPassword, verifyPassword } from '@/lib/security/password';
+import { hashPassword, verifyPassword, validatePasswordComplexity } from '@/lib/security/password';
 import { signAuthToken } from '@/lib/security/jwt';
-import { UnauthorizedError, ConflictError } from '@/lib/errors';
+import { UnauthorizedError, ConflictError, ValidationError } from '@/lib/errors';
 import { AuditService } from '@/modules/audit/audit.service';
 import { AuditAction, UserRole } from '@prisma/client';
 import { LoginDto, RegisterClientDto } from './auth.dto';
@@ -61,6 +61,11 @@ export class AuthService {
   }
 
   public static async registerClient(dto: RegisterClientDto, ipAddress?: string, userAgent?: string) {
+    const passwordCheck = validatePasswordComplexity(dto.password);
+    if (!passwordCheck.isValid) {
+      throw new ValidationError(passwordCheck.error || 'Пароль не соответствует требованиям безопасности');
+    }
+
     const existing = await prisma.user.findFirst({
       where: {
         OR: [
