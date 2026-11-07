@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { formatDateTime } from '@/lib/utils';
 import { OrderStatus } from '@prisma/client';
+import { buildOrdersPaginationUrl, calculateDisplayRange } from '@/lib/pagination';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,6 +19,7 @@ interface AdminOrdersPageProps {
     status?: string;
     warehouseId?: string;
     date?: string;
+    page?: string;
   }>;
 }
 
@@ -27,16 +29,22 @@ export default async function AdminOrdersPage({ searchParams }: AdminOrdersPageP
   const status = (params.status as OrderStatus) || undefined;
   const warehouseId = params.warehouseId || '';
   const date = params.date || '';
+  const rawPage = Number(params.page);
+  const requestedPage = Number.isInteger(rawPage) && rawPage > 0 ? rawPage : 1;
 
-  const [{ items, total }, warehouses] = await Promise.all([
+  const [{ items, total, page, pageSize, totalPages }, warehouses] = await Promise.all([
     getAdminOrdersAction({
       search: search || undefined,
       status: status || undefined,
       warehouseId: warehouseId || undefined,
       date: date || undefined,
+      page: requestedPage,
+      pageSize: 25,
     }),
     WarehousesService.list(),
   ]);
+
+  const { fromRecord, toRecord } = calculateDisplayRange(page, pageSize, items.length, total);
 
   const statusOptions: { value: OrderStatus; label: string }[] = Object.entries(STATUS_LABELS).map(
     ([val, label]) => ({
@@ -57,6 +65,11 @@ export default async function AdminOrdersPage({ searchParams }: AdminOrdersPageP
           </h1>
           <p className="mt-1 text-sm text-slate-500">
             Всего найдено: <span className="font-semibold text-slate-800">{total}</span>
+            {total > 0 && (
+              <span className="text-xs text-slate-400 ml-2">
+                (страница {page} из {totalPages})
+              </span>
+            )}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -152,7 +165,8 @@ export default async function AdminOrdersPage({ searchParams }: AdminOrdersPageP
       {/* Orders Table */}
       <Card className="border-slate-200 shadow-sm overflow-hidden bg-white">
         {items.length > 0 ? (
-          <div className="overflow-x-auto">
+          <>
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -256,28 +270,74 @@ export default async function AdminOrdersPage({ searchParams }: AdminOrdersPageP
               </TableBody>
             </Table>
           </div>
-        ) : (
-          <div className="py-12 px-6 text-center">
-            <div className="mx-auto w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 mb-3">
-              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+          {/* Pagination Bar */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-6 py-4 border-t border-slate-200 bg-slate-50/50">
+            <div className="text-xs text-slate-500">
+              Показаны <span className="font-semibold text-slate-700">{fromRecord}–{toRecord}</span> из{' '}
+              <span className="font-semibold text-slate-700">{total}</span> заявок
             </div>
-            <h3 className="text-sm font-semibold text-slate-900">Заявок по заданным критериям не найдено</h3>
-            <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1">
-              Попробуйте изменить поисковый запрос, сбросить фильтр по статусу или дате.
-            </p>
-            {hasActiveFilters && (
-              <div className="mt-4">
-                <Link href="/admin/orders">
-                  <Button variant="outline" size="sm">
-                    Сбросить все фильтры
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-slate-600">
+                Страница <span className="font-semibold text-slate-900">{page}</span> из{' '}
+                <span className="font-semibold text-slate-900">{totalPages}</span>
+              </span>
+              <div className="flex items-center gap-1.5">
+                {page > 1 ? (
+                  <Link href={buildOrdersPaginationUrl(page - 1, { search, status, warehouseId, date })}>
+                    <Button variant="outline" size="sm" className="h-8 px-3 text-xs">
+                      Предыдущая
+                    </Button>
+                  </Link>
+                ) : (
+                  <Button variant="outline" size="sm" className="h-8 px-3 text-xs" disabled>
+                    Предыдущая
                   </Button>
-                </Link>
+                )}
+
+                {page < totalPages ? (
+                  <Link href={buildOrdersPaginationUrl(page + 1, { search, status, warehouseId, date })}>
+                    <Button variant="outline" size="sm" className="h-8 px-3 text-xs">
+                      Следующая
+                    </Button>
+                  </Link>
+                ) : (
+                  <Button variant="outline" size="sm" className="h-8 px-3 text-xs" disabled>
+                    Следующая
+                  </Button>
+                )}
               </div>
+            </div>
+          </div>
+        </>
+      ) : (
+        <div className="py-12 px-6 text-center">
+          <div className="mx-auto w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 mb-3">
+            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <h3 className="text-sm font-semibold text-slate-900">Заявок по заданным критериям не найдено</h3>
+          <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1">
+            Попробуйте изменить поисковый запрос, сбросить фильтр по статусу или дате.
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-2 mt-4">
+            {page > 1 && (
+              <Link href={buildOrdersPaginationUrl(1, { search, status, warehouseId, date })}>
+                <Button variant="outline" size="sm">
+                  На первую страницу
+                </Button>
+              </Link>
+            )}
+            {hasActiveFilters && (
+              <Link href="/admin/orders">
+                <Button variant="outline" size="sm">
+                  Сбросить все фильтры
+                </Button>
+              </Link>
             )}
           </div>
-        )}
+        </div>
+      )}
       </Card>
     </div>
   );

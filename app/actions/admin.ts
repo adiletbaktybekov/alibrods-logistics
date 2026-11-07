@@ -9,6 +9,7 @@ import { OrderStatus, UserRole } from '@prisma/client';
 import { ForbiddenError, UnauthorizedError } from '@/lib/errors';
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@/database/prisma';
+import { sanitizePaginationParams } from '@/lib/pagination';
 
 const STAFF_ROLES: UserRole[] = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'ACCOUNTANT'];
 
@@ -28,16 +29,22 @@ export async function getAdminDashboardStatsAction() {
   return OrdersService.getAdminDashboardStats();
 }
 
-export async function getAdminOrdersAction(params: {
+export interface GetAdminOrdersParams {
   search?: string;
   status?: OrderStatus;
   warehouseId?: string;
   date?: string;
-}) {
+  page?: number;
+  pageSize?: number;
+}
+
+export async function getAdminOrdersAction(params: GetAdminOrdersParams = {}) {
   await requireStaffUser();
 
+  const { page, pageSize, skip } = sanitizePaginationParams(params.page, params.pageSize);
+
   if (!process.env.DATABASE_URL) {
-    return { items: [], total: 0 };
+    return { items: [], total: 0, page, pageSize, totalPages: 1 };
   }
 
   try {
@@ -75,7 +82,8 @@ export async function getAdminOrdersAction(params: {
     const [items, total] = await Promise.all([
       prisma.order.findMany({
         where,
-        take: 50,
+        skip,
+        take: pageSize,
         orderBy: { createdAt: 'desc' },
         include: {
           warehouse: true,
@@ -90,9 +98,17 @@ export async function getAdminOrdersAction(params: {
       prisma.order.count({ where }),
     ]);
 
-    return { items, total };
+    const totalPages = total > 0 ? Math.ceil(total / pageSize) : 1;
+
+    return {
+      items,
+      total,
+      page,
+      pageSize,
+      totalPages,
+    };
   } catch {
-    return { items: [], total: 0 };
+    return { items: [], total: 0, page, pageSize, totalPages: 1 };
   }
 }
 
