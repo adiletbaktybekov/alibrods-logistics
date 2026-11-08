@@ -114,6 +114,71 @@ export class TelegramBotClient {
   }
 
   /**
+   * Retrieves basic chat information via getChat.
+   */
+  public async getChat(
+    chatId: number | string
+  ): Promise<{ id: number | string; type: string; title?: string; username?: string; description?: string } | null> {
+    if (!this.botToken) {
+      logger.warn('Telegram bot token not configured. Skipping getChat.');
+      return null;
+    }
+
+    try {
+      const response = await fetch(`${this.baseUrl}/getChat?chat_id=${encodeURIComponent(chatId)}`, {
+        method: 'GET',
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.ok || !data.result) {
+        logger.error({ chatId, data }, 'Failed to call getChat from Telegram API');
+        return null;
+      }
+
+      return data.result;
+    } catch (err) {
+      logger.error({ err, chatId }, 'Network error while calling Telegram getChat API');
+      return null;
+    }
+  }
+
+  /**
+   * Retrieves chat member information and permissions via getChatMember.
+   */
+  public async getChatMember(
+    chatId: number | string,
+    userId: number | string
+  ): Promise<{
+    status: 'creator' | 'administrator' | 'member' | 'restricted' | 'left' | 'kicked';
+    can_post_messages?: boolean;
+    can_send_messages?: boolean;
+    is_anonymous?: boolean;
+  } | null> {
+    if (!this.botToken) {
+      logger.warn('Telegram bot token not configured. Skipping getChatMember.');
+      return null;
+    }
+
+    try {
+      const response = await fetch(
+        `${this.baseUrl}/getChatMember?chat_id=${encodeURIComponent(chatId)}&user_id=${encodeURIComponent(userId)}`,
+        { method: 'GET' }
+      );
+
+      const data = await response.json();
+      if (!response.ok || !data.ok || !data.result) {
+        logger.error({ chatId, userId, data }, 'Failed to call getChatMember from Telegram API');
+        return null;
+      }
+
+      return data.result;
+    } catch (err) {
+      logger.error({ err, chatId, userId }, 'Network error while calling Telegram getChatMember API');
+      return null;
+    }
+  }
+
+  /**
    * Retrieves file information from Telegram Bot API via getFile.
    */
   public async getFile(

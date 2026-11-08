@@ -77,6 +77,42 @@ describe('Telegram 3-Bot Architecture & Shared Group Notification Service', () =
 
       expect(info).toBeNull();
     });
+
+    it('should fetch chat info via getChat', async () => {
+      const mockChat = {
+        id: -1003893397086,
+        type: 'supergroup',
+        title: 'AliBros Logistics Team',
+      };
+
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ ok: true, result: mockChat }),
+      } as Response);
+
+      const client = new TelegramBotClient('manager-token');
+      const chat = await client.getChat(-1003893397086);
+
+      expect(chat).toEqual(mockChat);
+    });
+
+    it('should check bot membership and rights via getChatMember', async () => {
+      const mockMember = {
+        status: 'administrator',
+        can_post_messages: true,
+        can_send_messages: true,
+      };
+
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ ok: true, result: mockMember }),
+      } as Response);
+
+      const client = new TelegramBotClient('manager-token');
+      const member = await client.getChatMember(-1003893397086, 12345678);
+
+      expect(member).toEqual(mockMember);
+    });
   });
 
   describe('2. Multi-Bot Client Isolation', () => {
