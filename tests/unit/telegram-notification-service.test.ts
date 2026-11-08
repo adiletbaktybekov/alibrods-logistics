@@ -360,4 +360,114 @@ describe('Telegram 3-Bot Architecture & Shared Group Notification Service', () =
       expect(call.text).toContain('Панель администратора');
     });
   });
+
+  describe('6. Production Readiness, Group Permissions & Webhook Security Audit', () => {
+    it('should detect when actual username does not match expected username', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          result: {
+            id: 12345,
+            is_bot: true,
+            first_name: 'Unexpected Bot',
+            username: 'UnexpectedDriverBot',
+          },
+        }),
+      } as Response);
+
+      const client = new TelegramBotClient('some-token');
+      const me = await client.getMe();
+      const expectedUsername = 'AliBrosDriverBot';
+      const matches = me?.username?.toLowerCase() === expectedUsername.toLowerCase();
+
+      expect(matches).toBe(false);
+    });
+
+    it('should detect when Manager Bot is missing from group (chat not found 400)', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+        ok: false,
+        json: async () => ({
+          ok: false,
+          error_code: 400,
+          description: 'Bad Request: chat not found',
+        }),
+      } as Response);
+
+      const client = new TelegramBotClient('manager-token');
+      const chat = await client.getChat(-1003893397086);
+
+      expect(chat).toBeNull();
+    });
+
+    it('should detect insufficient group permissions when can_send_messages is false', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          result: {
+            status: 'restricted',
+            can_send_messages: false,
+            can_post_messages: false,
+          },
+        }),
+      } as Response);
+
+      const client = new TelegramBotClient('manager-token');
+      const member = await client.getChatMember(-1003893397086, 9155408641);
+
+      expect(member).not.toBeNull();
+      expect(member?.can_send_messages).toBe(false);
+      expect(member?.status).toBe('restricted');
+    });
+
+    it('should detect valid admin permissions when status is administrator and can_send_messages is allowed', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          result: {
+            status: 'administrator',
+            can_send_messages: true,
+            can_post_messages: true,
+          },
+        }),
+      } as Response);
+
+      const client = new TelegramBotClient('manager-token');
+      const member = await client.getChatMember(-1003893397086, 9155408641);
+
+      expect(member?.status).toBe('administrator');
+      expect(member?.can_send_messages).toBe(true);
+    });
+
+    it('should verify webhook secret token matching and reject invalid secret with 403', async () => {
+      const { POST } = await import('@/app/api/telegram/webhook/route');
+      const { NextRequest } = await import('next/server');
+
+      process.env.TELEGRAM_BOT_WEBHOOK_SECRET = 'valid-secret-token-123456';
+
+      // 1. Invalid secret -> 403
+      const reqInvalid = new NextRequest('http://localhost:3000/api/telegram/webhook?bot=driver', {
+        method: 'POST',
+        headers: {
+          'x-telegram-bot-api-secret-token': 'wrong-secret',
+        },
+        body: JSON.stringify({ update_id: 1 }),
+      });
+      const resInvalid = await POST(reqInvalid);
+      expect(resInvalid.status).toBe(403);
+
+      // 2. Valid secret -> 200 ok
+      const reqValid = new NextRequest('http://localhost:3000/api/telegram/webhook?bot=driver', {
+        method: 'POST',
+        headers: {
+          'x-telegram-bot-api-secret-token': 'valid-secret-token-123456',
+        },
+        body: JSON.stringify({ update_id: 1, message: { text: '/start', from: { id: 100 }, chat: { id: 100 } } }),
+      });
+      const resValid = await POST(reqValid);
+      expect(resValid.status).toBe(200);
+    });
+  });
 });
