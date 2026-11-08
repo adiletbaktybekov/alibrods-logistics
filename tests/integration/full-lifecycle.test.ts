@@ -70,18 +70,20 @@ describe('Phase 8: End-to-End Full Order Lifecycle & System Integration', () => 
       ).rejects.toThrow();
     });
 
-    it('should issue verifiable JWT tokens containing user role and identity', async () => {
+    it('should issue verifiable JWT tokens containing user role, identity, and tokenVersion', async () => {
       const token = await signAuthToken({
         userId: clientUser.id,
         role: clientUser.role as UserRole,
         email: clientUser.email,
         phone: clientUser.phone,
+        tokenVersion: 1,
       });
       expect(token).toBeDefined();
       const payload = await verifyAuthToken(token);
       expect(payload).not.toBeNull();
       expect(payload?.sub).toBe(clientUser.id);
       expect(payload?.role).toBe(UserRole.CLIENT);
+      expect(payload?.tokenVersion).toBe(1);
     });
   });
 

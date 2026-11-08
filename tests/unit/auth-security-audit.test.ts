@@ -11,7 +11,16 @@ vi.mock('next/headers', () => ({
   cookies: vi.fn(),
 }));
 
+vi.mock('@/database/prisma', () => ({
+  prisma: {
+    user: {
+      findUnique: vi.fn(),
+    },
+  },
+}));
+
 import { cookies } from 'next/headers';
+import { prisma } from '@/database/prisma';
 
 describe('Stage 6: Authorization Security Audit', () => {
   beforeEach(() => {
@@ -33,10 +42,20 @@ describe('Stage 6: Authorization Security Audit', () => {
         userId: 'client-user-id',
         role: 'CLIENT',
         email: 'client@example.com',
+        tokenVersion: 1,
       });
 
       vi.mocked(cookies).mockResolvedValue({
         get: vi.fn().mockReturnValue({ value: clientToken }),
+      } as any);
+
+      vi.mocked(prisma.user.findUnique).mockResolvedValue({
+        id: 'client-user-id',
+        role: 'CLIENT',
+        email: 'client@example.com',
+        phone: null,
+        isActive: true,
+        tokenVersion: 1,
       } as any);
 
       await expect(requireStaffUser()).rejects.toThrow(ForbiddenError);
@@ -48,10 +67,20 @@ describe('Stage 6: Authorization Security Audit', () => {
         userId: 'driver-user-id',
         role: 'DRIVER',
         phone: '+79991112233',
+        tokenVersion: 1,
       });
 
       vi.mocked(cookies).mockResolvedValue({
         get: vi.fn().mockReturnValue({ value: driverToken }),
+      } as any);
+
+      vi.mocked(prisma.user.findUnique).mockResolvedValue({
+        id: 'driver-user-id',
+        role: 'DRIVER',
+        email: null,
+        phone: '+79991112233',
+        isActive: true,
+        tokenVersion: 1,
       } as any);
 
       await expect(requireStaffUser()).rejects.toThrow(ForbiddenError);
@@ -62,10 +91,20 @@ describe('Stage 6: Authorization Security Audit', () => {
         userId: 'super-admin-id',
         role: 'SUPER_ADMIN',
         email: 'admin@alibros.ru',
+        tokenVersion: 1,
       });
 
       vi.mocked(cookies).mockResolvedValue({
         get: vi.fn().mockReturnValue({ value: adminToken }),
+      } as any);
+
+      vi.mocked(prisma.user.findUnique).mockResolvedValue({
+        id: 'super-admin-id',
+        role: 'SUPER_ADMIN',
+        email: 'admin@alibros.ru',
+        phone: null,
+        isActive: true,
+        tokenVersion: 1,
       } as any);
 
       const user = await requireStaffUser();
@@ -79,10 +118,20 @@ describe('Stage 6: Authorization Security Audit', () => {
         const token = await signAuthToken({
           userId: `staff-${role.toLowerCase()}`,
           role,
+          tokenVersion: 1,
         });
 
         vi.mocked(cookies).mockResolvedValue({
           get: vi.fn().mockReturnValue({ value: token }),
+        } as any);
+
+        vi.mocked(prisma.user.findUnique).mockResolvedValue({
+          id: `staff-${role.toLowerCase()}`,
+          role,
+          email: null,
+          phone: null,
+          isActive: true,
+          tokenVersion: 1,
         } as any);
 
         const user = await requireStaffUser();
@@ -211,6 +260,7 @@ describe('Stage 6: Authorization Security Audit', () => {
         userId: 'user-crypto-test-1',
         role: 'SUPER_ADMIN',
         email: 'admin@alibros.ru',
+        tokenVersion: 1,
       });
 
       const payload = await verifyAuthToken(token);
@@ -218,12 +268,14 @@ describe('Stage 6: Authorization Security Audit', () => {
       expect(payload?.sub).toBe('user-crypto-test-1');
       expect(payload?.role).toBe('SUPER_ADMIN');
       expect(payload?.email).toBe('admin@alibros.ru');
+      expect(payload?.tokenVersion).toBe(1);
     });
 
     it('rejects tampered or forged tokens', async () => {
       const token = await signAuthToken({
         userId: 'user-crypto-test-2',
         role: 'CLIENT',
+        tokenVersion: 1,
       });
 
       // Tamper token payload

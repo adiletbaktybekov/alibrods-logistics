@@ -76,6 +76,7 @@ export async function verifyMiniAppDataAction(initData: string) {
         role: account.user.role,
         email: account.user.email,
         phone: account.user.phone,
+        tokenVersion: account.user.tokenVersion ?? 1,
       });
 
       const cookieStore = await cookies();

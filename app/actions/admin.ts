@@ -426,10 +426,20 @@ export async function changePasswordAction(prevState: unknown, formData: FormDat
   // 8. Hash new password with Argon2id
   const newHash = await hashPassword(newPassword);
 
-  // 9. Update DB
-  await prisma.user.update({
+  // 9. Update DB: atomically update hash and increment tokenVersion
+  const updatedUser = await prisma.user.update({
     where: { id: user.id },
-    data: { passwordHash: newHash },
+    data: {
+      passwordHash: newHash,
+      tokenVersion: { increment: 1 },
+    },
+    select: {
+      id: true,
+      role: true,
+      email: true,
+      phone: true,
+      tokenVersion: true,
+    },
   });
 
   // 10. Audit log entry
@@ -441,16 +451,18 @@ export async function changePasswordAction(prevState: unknown, formData: FormDat
     metadata: {
       event: 'PASSWORD_CHANGE',
       role: user.role,
+      tokenVersion: updatedUser.tokenVersion,
     },
   });
 
-  // 11. Refresh session cookie seamlessly
+  // 11. Refresh session cookie seamlessly with the updated tokenVersion
   try {
     const token = await signAuthToken({
-      userId: dbUser.id,
-      role: dbUser.role,
-      email: dbUser.email,
-      phone: dbUser.phone,
+      userId: updatedUser.id,
+      role: updatedUser.role,
+      email: updatedUser.email,
+      phone: updatedUser.phone,
+      tokenVersion: updatedUser.tokenVersion,
     });
     const cookieStore = await cookies();
     cookieStore.set('alibros_token', token, {

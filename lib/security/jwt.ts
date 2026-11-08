@@ -11,16 +11,24 @@ export interface AuthTokenPayload extends JWTPayload {
   role: UserRole;
   email?: string | null;
   phone?: string | null;
+  tokenVersion: number;
 }
 
 export async function signAuthToken(
-  payload: { userId: string; role: UserRole; email?: string | null; phone?: string | null },
+  payload: {
+    userId: string;
+    role: UserRole;
+    email?: string | null;
+    phone?: string | null;
+    tokenVersion: number;
+  },
   expiresIn = env.JWT_EXPIRES_IN
 ): Promise<string> {
   return new SignJWT({
     role: payload.role,
     email: payload.email,
     phone: payload.phone,
+    tokenVersion: payload.tokenVersion,
   })
     .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
     .setSubject(payload.userId)

@@ -102,6 +102,7 @@ model User {
   role         UserRole  @default(CLIENT)
   isActive     Boolean   @default(true)
   isVerified   Boolean   @default(false)
+  tokenVersion Int       @default(1)
   lastLoginAt  DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt

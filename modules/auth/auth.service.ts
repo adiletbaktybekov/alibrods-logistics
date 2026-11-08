@@ -38,6 +38,7 @@ export class AuthService {
       role: user.role,
       email: user.email,
       phone: user.phone,
+      tokenVersion: user.tokenVersion ?? 1,
     });
 
     await AuditService.log({
@@ -108,6 +109,7 @@ export class AuthService {
       role: user.role,
       email: user.email,
       phone: user.phone,
+      tokenVersion: user.tokenVersion ?? 1,
     });
 
     await AuditService.log({

@@ -16,14 +16,36 @@ export async function getCurrentUser(): Promise<AuthenticatedUser | null> {
   if (!token) return null;
 
   const payload = await verifyAuthToken(token);
-  if (!payload || !payload.sub || !payload.role) return null;
+  if (!payload || !payload.sub || !payload.role || typeof payload.tokenVersion !== 'number') {
+    return null;
+  }
 
-  return {
-    id: payload.sub,
-    role: payload.role,
-    email: payload.email,
-    phone: payload.phone,
-  };
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: {
+        id: true,
+        role: true,
+        email: true,
+        phone: true,
+        isActive: true,
+        tokenVersion: true,
+      },
+    });
+
+    if (!user || !user.isActive || user.tokenVersion !== payload.tokenVersion) {
+      return null;
+    }
+
+    return {
+      id: user.id,
+      role: user.role,
+      email: user.email,
+      phone: user.phone,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function getCurrentClientProfile() {
