@@ -271,7 +271,8 @@ export class DriverOrderService {
       orderId,
       order.status,
       targetStatus,
-      driver.userId
+      driver.userId,
+      statusComment
     ).catch(() => {});
 
     return { success: true, order: updated, isIdempotent: false };

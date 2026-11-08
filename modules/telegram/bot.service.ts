@@ -1,4 +1,8 @@
-import { getTelegramBotClient } from '@/integrations/telegram/client';
+import {
+  getDriverTelegramBotClient,
+  getClientTelegramBotClient,
+  getManagerTelegramBotClient,
+} from '@/integrations/telegram/client';
 import { DriverPairingService } from './pairing.service';
 import { DriverOrderService } from '@/modules/orders/driver-order.service';
 import { DriverPhotoService } from './photo.service';
@@ -66,10 +70,23 @@ export class TelegramBotService {
   }
 
   /**
-   * Handles incoming update from Telegram Webhook
+   * Handles incoming update from Telegram Webhook for Driver, Client, or Manager Bot
    */
-  public static async handleUpdate(update: TelegramIncomingUpdate): Promise<void> {
-    const client = getTelegramBotClient();
+  public static async handleUpdate(
+    update: TelegramIncomingUpdate,
+    botType: 'driver' | 'client' | 'manager' = 'driver'
+  ): Promise<void> {
+    if (botType === 'client') {
+      await this.handleClientBotUpdate(update);
+      return;
+    }
+
+    if (botType === 'manager') {
+      await this.handleManagerBotUpdate(update);
+      return;
+    }
+
+    const client = getDriverTelegramBotClient();
 
     // 1. Handle Callback Query
     if (update.callback_query) {
@@ -119,12 +136,82 @@ export class TelegramBotService {
   }
 
   /**
+   * Handles incoming updates for Client Bot (@AliBrosClientBot)
+   */
+  public static async handleClientBotUpdate(update: TelegramIncomingUpdate): Promise<void> {
+    const clientBot = getClientTelegramBotClient();
+
+    if (update.callback_query) {
+      await clientBot.answerCallbackQuery(update.callback_query.id);
+      return;
+    }
+
+    if (update.message) {
+      const msg = update.message;
+      const tgId = msg.from.id;
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://alibros.com';
+
+      await clientBot.sendMessage({
+        chatId: tgId,
+        text: [
+          `👋 <b>Добро пожаловать в AliBros Logistics!</b>`,
+          ``,
+          `Этот бот предназначен для клиентов и селлеров маркетплейсов.`,
+          `Нажмите кнопку ниже, чтобы открыть личный кабинет (Telegram Mini App), рассчитать доставку, оформить заявку и отслеживать статус грузов.`,
+        ].join('\n'),
+        parseMode: 'HTML',
+        replyMarkup: {
+          inline_keyboard: [
+            [
+              {
+                text: '📱 Открыть кабинет селлера (Mini App)',
+                web_app: { url: `${appUrl}/miniapp` },
+              },
+            ],
+          ],
+        },
+      });
+    }
+  }
+
+  /**
+   * Handles incoming updates for Manager Bot (@AliBrosManagerBot)
+   */
+  public static async handleManagerBotUpdate(update: TelegramIncomingUpdate): Promise<void> {
+    const managerBot = getManagerTelegramBotClient();
+
+    if (update.callback_query) {
+      await managerBot.answerCallbackQuery(update.callback_query.id);
+      return;
+    }
+
+    if (update.message) {
+      const msg = update.message;
+      const tgId = msg.from.id;
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://alibros.com';
+
+      await managerBot.sendMessage({
+        chatId: tgId,
+        text: [
+          `🤖 <b>AliBros Manager Bot</b>`,
+          ``,
+          `Бот оперативных уведомлений команды логистики AliBros.`,
+          `Все события по заявкам и статусам отправляются в общую рабочую группу.`,
+          ``,
+          `Для перехода в веб-панель управления откройте: <a href="${appUrl}/admin">Панель администратора</a>`,
+        ].join('\n'),
+        parseMode: 'HTML',
+      });
+    }
+  }
+
+  /**
    * Handles messages from users who have not yet linked their Telegram account.
    */
   private static async handleUnlinkedUserMessage(
     msg: NonNullable<TelegramIncomingUpdate['message']>
   ): Promise<void> {
-    const client = getTelegramBotClient();
+    const client = getDriverTelegramBotClient();
     const tgId = msg.from.id;
     const text = msg.text?.trim() || '';
 
@@ -200,7 +287,7 @@ export class TelegramBotService {
     tgId: number,
     text: string
   ): Promise<void> {
-    const client = getTelegramBotClient();
+    const client = getDriverTelegramBotClient();
 
     if (text === '/start') {
       await client.sendMessage({
@@ -274,7 +361,7 @@ export class TelegramBotService {
    * Sends the list of active orders with action buttons to the driver.
    */
   public static async sendActiveOrdersList(driverProfileId: string, tgId: number): Promise<void> {
-    const client = getTelegramBotClient();
+    const client = getDriverTelegramBotClient();
     const orders = await DriverOrderService.listActiveOrders(driverProfileId);
 
     if (orders.length === 0) {
@@ -343,7 +430,7 @@ export class TelegramBotService {
    * Sends the history of completed orders.
    */
   private static async sendCompletedOrdersList(driverProfileId: string, tgId: number): Promise<void> {
-    const client = getTelegramBotClient();
+    const client = getDriverTelegramBotClient();
     const orders = await DriverOrderService.listCompletedOrders(driverProfileId, 10);
 
     if (orders.length === 0) {
@@ -384,7 +471,7 @@ export class TelegramBotService {
     tgId: number,
     data: string
   ): Promise<void> {
-    const client = getTelegramBotClient();
+    const client = getDriverTelegramBotClient();
     const parts = data.split(':');
     const prefix = parts[0];
     const action = parts[1];
@@ -519,7 +606,7 @@ export class TelegramBotService {
     tgId: number,
     msg: NonNullable<TelegramIncomingUpdate['message']>
   ): Promise<void> {
-    const client = getTelegramBotClient();
+    const client = getDriverTelegramBotClient();
     const session = DriverPhotoService.getPendingUploadSession(driverProfileId);
 
     if (!session) {

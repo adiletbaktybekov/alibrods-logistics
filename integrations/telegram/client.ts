@@ -87,6 +87,33 @@ export class TelegramBotClient {
   }
 
   /**
+   * Retrieves basic information about the bot via getMe.
+   */
+  public async getMe(): Promise<{ id: number; is_bot: boolean; first_name: string; username?: string } | null> {
+    if (!this.botToken) {
+      logger.warn('Telegram bot token not configured. Skipping getMe.');
+      return null;
+    }
+
+    try {
+      const response = await fetch(`${this.baseUrl}/getMe`, {
+        method: 'GET',
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.ok || !data.result) {
+        logger.error({ data }, 'Failed to call getMe from Telegram API');
+        return null;
+      }
+
+      return data.result;
+    } catch (err) {
+      logger.error({ err }, 'Network error while calling Telegram getMe API');
+      return null;
+    }
+  }
+
+  /**
    * Retrieves file information from Telegram Bot API via getFile.
    */
   public async getFile(

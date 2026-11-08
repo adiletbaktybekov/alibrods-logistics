@@ -1,13 +1,109 @@
 import { prisma } from '@/database/prisma';
-import { logger } from '@/lib/logger';
-import { getTelegramBotClient, getClientTelegramBotClient } from '@/integrations/telegram/client';
-import { OrderStatus, NotificationType, NotificationChannel } from '@prisma/client';
+import { logger, safeLogError } from '@/lib/logger';
+import { getDriverTelegramBotClient, getClientTelegramBotClient } from '@/integrations/telegram/client';
+import { OrderStatus, NotificationType, NotificationChannel, AssignmentStatus } from '@prisma/client';
 import { STATUS_LABELS } from '@/components/ui/status-badge';
 import { NotificationsService } from './notifications.service';
+import { TelegramNotificationService, TelegramGroupEventType } from '@/modules/telegram/notification.service';
 
 export class NotificationDispatcherService {
   /**
-   * Notifies a driver when a new order is assigned to them.
+   * Notifies the manager group when a new order is registered.
+   */
+  public static async notifyOrderCreated(orderId: string): Promise<boolean> {
+    if (!process.env.DATABASE_URL) return false;
+
+    try {
+      const order = await prisma.order.findUnique({
+        where: { id: orderId },
+        include: { warehouse: true },
+      });
+
+      if (!order) return false;
+
+      await TelegramNotificationService.notifyGroupEvent('ORDER_CREATED', {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        marketplace: order.marketplace,
+        warehouseName: order.warehouse.name,
+        scheduledPickupAt: order.scheduledPickupAt,
+        totalBoxesCount: order.totalBoxesCount,
+        totalPalletsCount: order.totalPalletsCount,
+      });
+
+      return true;
+    } catch (err: unknown) {
+      safeLogError(err, 'Error in notifyOrderCreated');
+      return false;
+    }
+  }
+
+  /**
+   * Notifies the manager group and client when an order is confirmed by manager.
+   */
+  public static async notifyOrderConfirmed(orderId: string, comment?: string): Promise<boolean> {
+    if (!process.env.DATABASE_URL) return false;
+
+    try {
+      const order = await prisma.order.findUnique({
+        where: { id: orderId },
+        include: { warehouse: true },
+      });
+
+      if (!order) return false;
+
+      await TelegramNotificationService.notifyGroupEvent('ORDER_CONFIRMED', {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        marketplace: order.marketplace,
+        warehouseName: order.warehouse.name,
+        scheduledPickupAt: order.scheduledPickupAt,
+        totalBoxesCount: order.totalBoxesCount,
+        totalPalletsCount: order.totalPalletsCount,
+        managerComment: comment,
+      });
+
+      return true;
+    } catch (err: unknown) {
+      safeLogError(err, 'Error in notifyOrderConfirmed');
+      return false;
+    }
+  }
+
+  /**
+   * Notifies the manager group and client when an order is rejected by manager.
+   */
+  public static async notifyOrderRejected(orderId: string, reason: string): Promise<boolean> {
+    if (!process.env.DATABASE_URL) return false;
+
+    try {
+      const order = await prisma.order.findUnique({
+        where: { id: orderId },
+        include: { warehouse: true },
+      });
+
+      if (!order) return false;
+
+      await TelegramNotificationService.notifyGroupEvent('ORDER_REJECTED', {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        marketplace: order.marketplace,
+        warehouseName: order.warehouse.name,
+        scheduledPickupAt: order.scheduledPickupAt,
+        totalBoxesCount: order.totalBoxesCount,
+        totalPalletsCount: order.totalPalletsCount,
+        rejectionReason: reason,
+      });
+
+      return true;
+    } catch (err: unknown) {
+      safeLogError(err, 'Error in notifyOrderRejected');
+      return false;
+    }
+  }
+
+  /**
+   * Notifies a driver via DM and notifies manager group when an order is assigned.
    */
   public static async notifyDriverOrderAssigned(
     orderId: string,
@@ -38,7 +134,7 @@ export class NotificationDispatcherService {
 
       if (!order || !driver) return false;
 
-      // Queue in-app notification
+      // 1. Queue in-app notification for driver
       await NotificationsService.queue({
         userId: driver.userId,
         type: NotificationType.DRIVER_ASSIGNED,
@@ -48,16 +144,29 @@ export class NotificationDispatcherService {
         payload: { orderId, orderNumber: order.orderNumber },
       }).catch((e) => logger.warn({ err: e }, 'Could not record driver notification in DB'));
 
+      // 2. Notify manager group about driver assignment
+      await TelegramNotificationService.notifyGroupEvent('DRIVER_ASSIGNED', {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        marketplace: order.marketplace,
+        warehouseName: order.warehouse.name,
+        scheduledPickupAt: order.scheduledPickupAt,
+        totalBoxesCount: order.totalBoxesCount,
+        totalPalletsCount: order.totalPalletsCount,
+        driverName: driver.fullName,
+      }).catch((e) => safeLogError(e, 'Failed to dispatch DRIVER_ASSIGNED group notification'));
+
+      // 3. Send personal Telegram message to driver via Driver Bot
       const tgAccount = driver.user?.telegramAccount;
       if (!tgAccount || !tgAccount.telegramId) {
         logger.info(
           { driverProfileId },
-          'Driver has no linked Telegram account. Skipping Telegram message dispatch.'
+          'Driver has no linked Telegram account. Skipping Telegram DM dispatch.'
         );
         return false;
       }
 
-      const client = getTelegramBotClient();
+      const client = getDriverTelegramBotClient();
       const pickupDateStr = order.scheduledPickupAt
         ? new Date(order.scheduledPickupAt).toLocaleDateString('ru-RU')
         : 'не указана';
@@ -98,20 +207,90 @@ export class NotificationDispatcherService {
         parseMode: 'HTML',
         replyMarkup,
       });
-    } catch (err) {
-      logger.error({ err, orderId, driverProfileId }, 'Error in notifyDriverOrderAssigned');
+    } catch (err: unknown) {
+      safeLogError(err, 'Error in notifyDriverOrderAssigned');
       return false;
     }
   }
 
   /**
-   * Notifies managers and client when an order changes status.
+   * Notifies the manager group and client when delivery cost is calculated.
+   */
+  public static async notifyCostCalculated(
+    orderId: string,
+    costAmount: number,
+    currency = 'RUB'
+  ): Promise<boolean> {
+    if (!process.env.DATABASE_URL) return false;
+
+    try {
+      const order = await prisma.order.findUnique({
+        where: { id: orderId },
+        include: {
+          warehouse: true,
+          client: {
+            include: {
+              user: {
+                include: {
+                  telegramAccount: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!order) return false;
+
+      // 1. Dispatch group notification via Manager Bot
+      await TelegramNotificationService.notifyGroupEvent('COST_CALCULATED', {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        marketplace: order.marketplace,
+        warehouseName: order.warehouse.name,
+        scheduledPickupAt: order.scheduledPickupAt,
+        totalBoxesCount: order.totalBoxesCount,
+        totalPalletsCount: order.totalPalletsCount,
+        costAmount,
+        currency,
+      });
+
+      // 2. Notify client via Client Bot if telegram account linked
+      const clientTg = order.client?.user?.telegramAccount;
+      if (clientTg?.telegramId) {
+        const clientBot = getClientTelegramBotClient();
+        const formattedCost = costAmount.toLocaleString('ru-RU');
+        const clientMsg = [
+          `💰 <b>Рассчитана стоимость доставки</b>`,
+          ``,
+          `Заявка: <code>${order.orderNumber}</code>`,
+          `Склад: <b>${order.warehouse.name}</b>`,
+          `Итоговая стоимость: <b>${formattedCost} ${currency}</b>`,
+        ].join('\n');
+
+        await clientBot.sendMessageWithRetry({
+          chatId: clientTg.telegramId.toString(),
+          text: clientMsg,
+          parseMode: 'HTML',
+        }).catch((e) => logger.warn({ err: e }, 'Client Telegram cost notification failed'));
+      }
+
+      return true;
+    } catch (err: unknown) {
+      safeLogError(err, 'Error in notifyCostCalculated');
+      return false;
+    }
+  }
+
+  /**
+   * Notifies managers, client, and team group when an order changes status.
    */
   public static async notifyStatusChanged(
     orderId: string,
     fromStatus: OrderStatus,
     toStatus: OrderStatus,
-    changedByUserId?: string
+    changedByUserId?: string,
+    comment?: string
   ): Promise<void> {
     if (!process.env.DATABASE_URL) return;
 
@@ -129,6 +308,15 @@ export class NotificationDispatcherService {
             },
           },
           warehouse: true,
+          assignments: {
+            where: {
+              status: {
+                in: [AssignmentStatus.ASSIGNED, AssignmentStatus.ACCEPTED, AssignmentStatus.IN_PROGRESS],
+              },
+            },
+            include: { driver: true },
+            take: 1,
+          },
         },
       });
 
@@ -138,7 +326,7 @@ export class NotificationDispatcherService {
       const title = `Заявка ${order.orderNumber}: статус обновлён`;
       const body = `Новый статус: ${newStatusLabel}`;
 
-      // Notify Client (In-App)
+      // 1. Notify Client (In-App)
       if (order.client?.userId) {
         await NotificationsService.queue({
           userId: order.client.userId,
@@ -149,7 +337,7 @@ export class NotificationDispatcherService {
           payload: { orderId, fromStatus, toStatus, orderNumber: order.orderNumber },
         }).catch((e) => logger.warn({ err: e }, 'Could not record client in-app notification'));
 
-        // If client has Telegram linked, send a notification
+        // 2. Notify Client via Client Bot
         const clientTg = order.client.user?.telegramAccount;
         if (clientTg?.telegramId) {
           const clientMsg = [
@@ -169,12 +357,40 @@ export class NotificationDispatcherService {
         }
       }
 
+      // 3. Map status to group lifecycle event
+      const statusToGroupEventMap: Partial<Record<OrderStatus, TelegramGroupEventType>> = {
+        [OrderStatus.CONFIRMED]: 'ORDER_CONFIRMED',
+        [OrderStatus.REJECTED_BY_MANAGER]: 'ORDER_REJECTED',
+        [OrderStatus.ACCEPTED_BY_DRIVER]: 'DRIVER_ACCEPTED',
+        [OrderStatus.PICKED_UP]: 'CARGO_PICKED_UP',
+        [OrderStatus.DELIVERED_TO_WAREHOUSE]: 'DELIVERED_TO_WAREHOUSE',
+        [OrderStatus.ACCEPTED_BY_MARKETPLACE]: 'ACCEPTED_BY_MARKETPLACE',
+        [OrderStatus.COMPLETED]: 'ORDER_COMPLETED',
+      };
+
+      const groupEventType = statusToGroupEventMap[toStatus];
+      if (groupEventType) {
+        const activeDriverName = order.assignments[0]?.driver?.fullName;
+        await TelegramNotificationService.notifyGroupEvent(groupEventType, {
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          marketplace: order.marketplace,
+          warehouseName: order.warehouse.name,
+          scheduledPickupAt: order.scheduledPickupAt,
+          totalBoxesCount: order.totalBoxesCount,
+          totalPalletsCount: order.totalPalletsCount,
+          driverName: activeDriverName,
+          managerComment: comment,
+          rejectionReason: toStatus === OrderStatus.REJECTED_BY_MANAGER ? comment : undefined,
+        }).catch((e) => safeLogError(e, 'Failed to dispatch status change group notification'));
+      }
+
       logger.info(
         { orderId, fromStatus, toStatus, changedByUserId },
         'Dispatched status change notifications'
       );
-    } catch (err) {
-      logger.error({ err, orderId, fromStatus, toStatus }, 'Error in notifyStatusChanged');
+    } catch (err: unknown) {
+      safeLogError(err, 'Error in notifyStatusChanged');
     }
   }
 }

@@ -91,8 +91,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 4. Dispatch to Bot Service
-    await TelegramBotService.handleUpdate(update);
+    // 4. Determine target bot (driver, client, manager)
+    const botParam = req.nextUrl.searchParams.get('bot');
+    const botType = botParam === 'client' ? 'client' : botParam === 'manager' ? 'manager' : 'driver';
+
+    // 5. Dispatch to Bot Service
+    await TelegramBotService.handleUpdate(update, botType);
 
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {

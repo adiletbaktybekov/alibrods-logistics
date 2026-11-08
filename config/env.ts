@@ -11,6 +11,8 @@ const envSchema = z.object({
   TELEGRAM_CLIENT_BOT_TOKEN: z.string().optional(),
   TELEGRAM_DRIVER_BOT_TOKEN: z.string().optional(),
   TELEGRAM_MANAGER_BOT_TOKEN: z.string().optional(),
+  TELEGRAM_MANAGER_GROUP_CHAT_ID: z.string().optional(),
+  TELEGRAM_ENABLE_GROUP_NOTIFICATIONS: z.coerce.boolean().default(true),
   TELEGRAM_BOT_WEBHOOK_SECRET: z.string().optional(),
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(100),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60000),

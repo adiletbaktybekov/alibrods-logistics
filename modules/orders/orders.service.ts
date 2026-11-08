@@ -113,6 +113,8 @@ export class OrdersService {
       metadata: { orderNumber: order.orderNumber, marketplace: order.marketplace },
     });
 
+    NotificationDispatcherService.notifyOrderCreated(order.id).catch(() => {});
+
     return order;
   }
 
@@ -213,6 +215,8 @@ export class OrdersService {
       ipAddress,
       metadata: { orderNumber: order.orderNumber, marketplace: order.marketplace },
     });
+
+    NotificationDispatcherService.notifyOrderCreated(order.id).catch(() => {});
 
     return order;
   }
@@ -467,6 +471,14 @@ export class OrdersService {
       ipAddress,
     });
 
+    NotificationDispatcherService.notifyStatusChanged(
+      orderId,
+      existing.status,
+      dto.status,
+      user.id,
+      dto.comment
+    ).catch(() => {});
+
     return updated;
   }
 
@@ -580,6 +592,8 @@ export class OrdersService {
       ipAddress,
     });
 
+    NotificationDispatcherService.notifyOrderConfirmed(orderId, comment).catch(() => {});
+
     return updated;
   }
 
@@ -632,6 +646,8 @@ export class OrdersService {
       metadata: { reason: reason.trim() },
       ipAddress,
     });
+
+    NotificationDispatcherService.notifyOrderRejected(orderId, reason.trim()).catch(() => {});
 
     return updated;
   }
@@ -912,6 +928,8 @@ export class OrdersService {
         orderNumber: order.orderNumber,
       },
     });
+
+    NotificationDispatcherService.notifyCostCalculated(order.id, amount, currency).catch(() => {});
 
     return { order: updated, isUpdated: true };
   }
