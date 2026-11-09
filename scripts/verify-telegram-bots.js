@@ -25,6 +25,7 @@ async function main() {
   const clientToken = localEnv.TELEGRAM_CLIENT_BOT_TOKEN || process.env.TELEGRAM_CLIENT_BOT_TOKEN;
   const managerToken = localEnv.TELEGRAM_MANAGER_BOT_TOKEN || process.env.TELEGRAM_MANAGER_BOT_TOKEN;
   const groupChatId = localEnv.TELEGRAM_MANAGER_GROUP_CHAT_ID || process.env.TELEGRAM_MANAGER_GROUP_CHAT_ID;
+  const groupTopicId = localEnv.TELEGRAM_MANAGER_GROUP_TOPIC_ID || process.env.TELEGRAM_MANAGER_GROUP_TOPIC_ID;
   const enableGroupNotif = localEnv.TELEGRAM_ENABLE_GROUP_NOTIFICATIONS || process.env.TELEGRAM_ENABLE_GROUP_NOTIFICATIONS;
 
   const summary = {
@@ -36,6 +37,8 @@ async function main() {
     },
     groupChatIdConfigured: Boolean(groupChatId && groupChatId.length > 0 && !groupChatId.includes('<')),
     groupChatIdValue: groupChatId ? groupChatId : 'NOT_CONFIGURED',
+    groupTopicIdConfigured: Boolean(groupTopicId && groupTopicId.length > 0 && !groupTopicId.includes('<')),
+    groupTopicIdValue: groupTopicId ? groupTopicId : 'NOT_CONFIGURED',
     groupNotificationsEnabled: enableGroupNotif !== 'false',
   };
 

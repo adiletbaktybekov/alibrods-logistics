@@ -259,6 +259,28 @@ describe('Telegram 3-Bot Architecture & Shared Group Notification Service', () =
       expect(callArg.parseMode).toBe('HTML');
     });
 
+    it('should include messageThreadId when TELEGRAM_MANAGER_GROUP_TOPIC_ID is configured', async () => {
+      process.env.TELEGRAM_ENABLE_GROUP_NOTIFICATIONS = 'true';
+      process.env.TELEGRAM_MANAGER_GROUP_CHAT_ID = '-1003893397086';
+      process.env.TELEGRAM_MANAGER_GROUP_TOPIC_ID = '8';
+      process.env.TELEGRAM_MANAGER_BOT_TOKEN = 'manager-bot-token-secret';
+
+      const sendSpy = vi
+        .spyOn(TelegramBotClient.prototype, 'sendMessage')
+        .mockResolvedValueOnce(true);
+
+      const res = await TelegramNotificationService.notifyGroupEvent('ORDER_CREATED', {
+        ...payload,
+        orderId: 'order-topic-test',
+      });
+
+      expect(res.sent).toBe(true);
+      expect(sendSpy).toHaveBeenCalledTimes(1);
+      const callArg = sendSpy.mock.calls[0][0];
+      expect(callArg.chatId).toBe('-1003893397086');
+      expect(callArg.messageThreadId).toBe('8');
+    });
+
     it('should deduplicate and prevent duplicate dispatch for the same event and order within 10 minutes', async () => {
       process.env.TELEGRAM_ENABLE_GROUP_NOTIFICATIONS = 'true';
       process.env.TELEGRAM_MANAGER_GROUP_CHAT_ID = '-1003893397086';

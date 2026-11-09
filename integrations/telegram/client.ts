@@ -5,6 +5,7 @@ export interface SendTelegramMessageOptions {
   text: string;
   parseMode?: 'HTML' | 'MarkdownV2' | 'Markdown';
   replyMarkup?: unknown;
+  messageThreadId?: number | string;
 }
 
 export class TelegramBotClient {
@@ -31,6 +32,9 @@ export class TelegramBotClient {
           text: options.text,
           parse_mode: options.parseMode || 'HTML',
           reply_markup: options.replyMarkup,
+          ...(options.messageThreadId !== undefined && options.messageThreadId !== null
+            ? { message_thread_id: Number(options.messageThreadId) }
+            : {}),
         }),
       });
 

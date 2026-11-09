@@ -240,6 +240,10 @@ export class TelegramNotificationService {
     // 4. Render message
     const text = this.buildGroupMessage(eventType, payload);
 
+    const groupTopicId =
+      process.env.TELEGRAM_MANAGER_GROUP_TOPIC_ID ||
+      process.env.TELEGRAM_GROUP_TOPIC_ID;
+
     // 5. Send via Manager Bot Client with retry
     try {
       const managerBot = getManagerTelegramBotClient();
@@ -247,6 +251,7 @@ export class TelegramNotificationService {
         chatId: groupChatId,
         text,
         parseMode: 'HTML',
+        ...(groupTopicId ? { messageThreadId: groupTopicId } : {}),
       });
 
       if (success) {
