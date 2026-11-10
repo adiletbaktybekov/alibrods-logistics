@@ -188,6 +188,16 @@ export class DriverPhotoService {
     const order = await prisma.order.findUnique({
       where: { id: params.orderId },
       include: {
+        warehouse: true,
+        client: {
+          include: {
+            user: {
+              include: {
+                telegramAccount: true,
+              },
+            },
+          },
+        },
         assignments: {
           where: { driverId: params.driverProfileId },
         },
@@ -314,6 +324,46 @@ export class DriverPhotoService {
         mimeType: validatedMimeType,
       },
     });
+
+    // 9. Dispatch notifications to manager group and client
+    const photoLabel =
+      params.photoType === PhotoType.CARGO_PICKUP
+        ? 'Фотография забора груза'
+        : 'Фотография сдачи на склад маркетплейса';
+
+    try {
+      const { TelegramNotificationService } = await import('./notification.service');
+      await TelegramNotificationService.notifyGroupEvent('PHOTO_UPLOADED', {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        marketplace: order.marketplace,
+        warehouseName: order.warehouse?.name || '',
+        totalBoxesCount: order.totalBoxesCount,
+        totalPalletsCount: order.totalPalletsCount,
+        driverName: driver?.fullName,
+        comment: photoLabel,
+      }).catch((e) => logger.warn({ err: e }, 'Failed to dispatch group photo notification'));
+
+      // If client has Telegram linked, notify client via Client Bot
+      const clientTg = order.client?.user?.telegramAccount;
+      if (clientTg?.telegramId) {
+        const { getClientTelegramBotClient } = await import('@/integrations/telegram/client');
+        const clientBot = getClientTelegramBotClient();
+        await clientBot.sendMessageWithRetry({
+          chatId: clientTg.telegramId.toString(),
+          text: [
+            `📸 <b>Новый фотоотчёт по заявке</b>`,
+            ``,
+            `Заявка: <code>${order.orderNumber}</code>`,
+            `Тип: <b>${photoLabel}</b>`,
+            `Склад: <b>${order.warehouse?.name || ''}</b>`,
+          ].join('\n'),
+          parseMode: 'HTML',
+        }).catch((e) => logger.warn({ err: e }, 'Failed to notify client about photo'));
+      }
+    } catch (notifErr) {
+      logger.warn({ notifErr }, 'Non-blocking notification error on photo upload');
+    }
 
     return {
       success: true,

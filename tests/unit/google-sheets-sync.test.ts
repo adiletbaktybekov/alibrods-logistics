@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SHEET_HEADERS, GoogleSheetsClient } from '@/integrations/google-sheets/client';
+import { SHEET_HEADERS, GoogleSheetsClient, resetGoogleSheetsClient } from '@/integrations/google-sheets/client';
 import { OrdersService } from '@/modules/orders/orders.service';
 import { GoogleSheetsSyncService } from '@/modules/integrations/google-sheets-sync.service';
 import { AuthenticatedUser } from '@/types/rbac';
@@ -118,12 +118,22 @@ describe('Google Sheets Integration & Accounting Sync', () => {
     });
 
     it('should return safe status when running sync without configured credentials', async () => {
-      const result = await GoogleSheetsSyncService.runFullSync(accountantUser);
-      expect(result).toBeDefined();
-      expect(typeof result.success).toBe('boolean');
-      expect(result.success).toBe(false);
-      expect(result.isConfigured).toBe(false);
-      expect(result.message).toContain('не настроена');
+      const origEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+      try {
+        delete process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+        resetGoogleSheetsClient();
+        const result = await GoogleSheetsSyncService.runFullSync(accountantUser);
+        expect(result).toBeDefined();
+        expect(typeof result.success).toBe('boolean');
+        expect(result.success).toBe(false);
+        expect(result.isConfigured).toBe(false);
+        expect(result.message).toContain('не настроена');
+      } finally {
+        if (origEmail !== undefined) {
+          process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL = origEmail;
+        }
+        resetGoogleSheetsClient();
+      }
     });
   });
 });

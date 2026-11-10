@@ -1,49 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { TelegramBotService, TelegramIncomingUpdate } from '@/modules/telegram/bot.service';
+import { TelegramDeduplicationService } from '@/modules/telegram/deduplication.service';
+import { DatabaseRateLimiter } from '@/lib/security/rate-limit';
 import { logger, safeLogError } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 
-// Sliding-window rate limiter per telegram user ID (max 40 requests/min)
-const rateLimitMap = new Map<number, { count: number; resetAt: number }>();
-const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
 const MAX_REQUESTS_PER_WINDOW = 40;
-
-// Deduplication store for callback queries (TTL 5 minutes)
-const processedCallbacks = new Map<string, number>();
-
-function isRateLimited(userId: number): boolean {
-  const now = Date.now();
-  const entry = rateLimitMap.get(userId);
-
-  if (!entry || entry.resetAt < now) {
-    rateLimitMap.set(userId, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
-    return false;
-  }
-
-  entry.count++;
-  return entry.count > MAX_REQUESTS_PER_WINDOW;
-}
-
-function isDuplicateCallback(callbackId: string): boolean {
-  const now = Date.now();
-
-  // Cleanup old entries periodically
-  if (processedCallbacks.size > 1000) {
-    for (const [id, timestamp] of processedCallbacks.entries()) {
-      if (now - timestamp > 5 * 60 * 1000) {
-        processedCallbacks.delete(id);
-      }
-    }
-  }
-
-  if (processedCallbacks.has(callbackId)) {
-    return true;
-  }
-
-  processedCallbacks.set(callbackId, now);
-  return false;
-}
 
 export async function POST(req: NextRequest) {
   // 1. Verify Telegram Webhook Secret Token (mandatory in production)
@@ -77,28 +41,55 @@ export async function POST(req: NextRequest) {
 
     const fromUserId = update.message?.from?.id || update.callback_query?.from?.id;
 
-    // 2. Check Rate Limit
-    if (fromUserId && isRateLimited(fromUserId)) {
-      logger.warn({ fromUserId }, 'Telegram user rate limited on webhook');
-      return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 });
-    }
+    // 2. Distributed Rate Limiting across Vercel serverless instances
+    if (fromUserId) {
+      const rateLimitKey = `tg:user:${fromUserId}`;
+      const rateLimitResult = await DatabaseRateLimiter.consume(
+        rateLimitKey,
+        MAX_REQUESTS_PER_WINDOW,
+        RATE_LIMIT_WINDOW_MS
+      );
 
-    // 3. Callback Deduplication
-    if (update.callback_query) {
-      if (isDuplicateCallback(update.callback_query.id)) {
-        logger.info({ callbackId: update.callback_query.id }, 'Ignoring duplicate callback query');
-        return NextResponse.json({ ok: true, duplicate: true });
+      if (!rateLimitResult.allowed) {
+        logger.warn({ fromUserId }, 'Telegram user rate limited on webhook');
+        return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 });
       }
     }
 
-    // 4. Determine target bot (driver, client, manager)
+    // 3. Determine target bot (driver, client, manager)
     const botParam = req.nextUrl.searchParams.get('bot');
     const botType = botParam === 'client' ? 'client' : botParam === 'manager' ? 'manager' : 'driver';
 
-    // 5. Dispatch to Bot Service
-    await TelegramBotService.handleUpdate(update, botType);
+    // 4. Distributed Deduplication on Update ID across Vercel serverless instances
+    const updateId = update.update_id ?? (update.callback_query?.id ? BigInt(update.callback_query.id) : null);
 
-    return NextResponse.json({ ok: true });
+    if (updateId !== null && updateId !== undefined) {
+      const claim = await TelegramDeduplicationService.claimUpdate(botType, updateId);
+      if (!claim.canProcess) {
+        logger.info(
+          { botType, updateId: updateId.toString(), reason: claim.reason },
+          'Telegram update already processed or in-flight on another instance. Skipping duplicate.'
+        );
+        return NextResponse.json({ ok: true, duplicate: true, reason: claim.reason });
+      }
+    }
+
+    // 5. Dispatch to Bot Service
+    try {
+      await TelegramBotService.handleUpdate(update, botType);
+
+      if (updateId !== null && updateId !== undefined) {
+        await TelegramDeduplicationService.markCompleted(botType, updateId);
+      }
+
+      return NextResponse.json({ ok: true });
+    } catch (dispatchError: unknown) {
+      if (updateId !== null && updateId !== undefined) {
+        const errorMsg = dispatchError instanceof Error ? dispatchError.message : String(dispatchError);
+        await TelegramDeduplicationService.markFailed(botType, updateId, errorMsg);
+      }
+      throw dispatchError;
+    }
   } catch (err: unknown) {
     safeLogError(err, 'Error processing Telegram webhook request');
     // Return 200 to prevent Telegram from looping retries indefinitely

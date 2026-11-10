@@ -59,18 +59,21 @@ export class S3StorageProvider implements IFileStorageProvider {
   private clientInstance: S3Client | null = null;
 
   constructor() {
-    this.bucketName = process.env.S3_BUCKET || process.env.AWS_S3_BUCKET;
-    this.endpoint = process.env.S3_ENDPOINT || process.env.AWS_S3_ENDPOINT;
+    this.bucketName = (process.env.S3_BUCKET || process.env.AWS_S3_BUCKET)?.trim();
+    const rawEndpoint = process.env.S3_ENDPOINT || process.env.AWS_S3_ENDPOINT;
+    this.endpoint = rawEndpoint ? rawEndpoint.trim().replace(/\/+$/, '') : undefined;
     this.region =
-      process.env.S3_REGION || process.env.AWS_REGION || 'ru-central1';
-    this.accessKeyId =
+      (process.env.S3_REGION || process.env.AWS_REGION || 'auto').trim();
+    this.accessKeyId = (
       process.env.S3_ACCESS_KEY_ID ||
       process.env.AWS_ACCESS_KEY_ID ||
-      process.env.S3_ACCESS_KEY;
-    this.secretAccessKey =
+      process.env.S3_ACCESS_KEY
+    )?.trim();
+    this.secretAccessKey = (
       process.env.S3_SECRET_ACCESS_KEY ||
       process.env.AWS_SECRET_ACCESS_KEY ||
-      process.env.S3_SECRET_KEY;
+      process.env.S3_SECRET_KEY
+    )?.trim();
 
     // Path-style is typically required for MinIO and custom S3 endpoints
     this.forcePathStyle =

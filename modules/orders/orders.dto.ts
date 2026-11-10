@@ -26,14 +26,17 @@ export const createOrderSchema = z.object({
   totalBoxesCount: z.number().int().min(0).optional(),
   totalPalletsCount: z.number().int().min(0).optional(),
   items: z.array(orderItemInputSchema).min(1, 'Order must contain at least one item or box'),
+  idempotencyKey: z.string().optional(),
 });
 
 export const createClientOrderSchema = z.object({
+  orderNumber: z.string().optional(),
   warehouseId: z.string().uuid('Выберите склад назначения'),
   deliveryDate: z.coerce.date({ invalid_type_error: 'Укажите корректную дату доставки' }),
   totalPalletsCount: z.coerce.number().int().min(0, 'Количество паллет не может быть меньше 0').default(0),
   totalBoxesCount: z.coerce.number().int().min(1, 'Укажите количество коробок (минимум 1)'),
   clientComment: z.string().max(1000, 'Комментарий не может превышать 1000 символов').optional(),
+  idempotencyKey: z.string().optional(),
 });
 
 export const updateOrderStatusSchema = z.object({

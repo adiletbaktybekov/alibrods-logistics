@@ -29,6 +29,8 @@ pino-*.log
 .env.test
 .env.production
 !.env.example
+*service-account*.json
+*credentials*.json
 
 # OS metadata
 .DS_Store

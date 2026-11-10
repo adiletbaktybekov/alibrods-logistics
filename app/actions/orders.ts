@@ -17,6 +17,7 @@ export async function createOrderAction(prevState: unknown, formData: FormData) 
   const totalPalletsCount = formData.get('totalPalletsCount')?.toString() || '0';
   const totalBoxesCount = formData.get('totalBoxesCount')?.toString() || '1';
   const clientComment = formData.get('clientComment')?.toString() || undefined;
+  const idempotencyKey = formData.get('idempotencyKey')?.toString() || undefined;
 
   const parsed = createClientOrderSchema.safeParse({
     warehouseId,
@@ -24,6 +25,7 @@ export async function createOrderAction(prevState: unknown, formData: FormData) 
     totalPalletsCount,
     totalBoxesCount,
     clientComment: clientComment || undefined,
+    idempotencyKey,
   });
 
   if (!parsed.success) {
@@ -56,6 +58,7 @@ export async function createMiniAppOrderAction(prevState: unknown, formData: For
   const totalPalletsCount = formData.get('totalPalletsCount')?.toString() || '0';
   const totalBoxesCount = formData.get('totalBoxesCount')?.toString() || '1';
   const clientComment = formData.get('clientComment')?.toString() || undefined;
+  const idempotencyKey = formData.get('idempotencyKey')?.toString() || undefined;
 
   const parsed = createClientOrderSchema.safeParse({
     warehouseId,
@@ -63,6 +66,7 @@ export async function createMiniAppOrderAction(prevState: unknown, formData: For
     totalPalletsCount,
     totalBoxesCount,
     clientComment: clientComment || undefined,
+    idempotencyKey,
   });
 
   if (!parsed.success) {

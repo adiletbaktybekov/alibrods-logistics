@@ -363,6 +363,7 @@ export class NotificationDispatcherService {
         [OrderStatus.REJECTED_BY_MANAGER]: 'ORDER_REJECTED',
         [OrderStatus.ACCEPTED_BY_DRIVER]: 'DRIVER_ACCEPTED',
         [OrderStatus.PICKED_UP]: 'CARGO_PICKED_UP',
+        [OrderStatus.IN_TRANSIT]: 'IN_TRANSIT',
         [OrderStatus.DELIVERED_TO_WAREHOUSE]: 'DELIVERED_TO_WAREHOUSE',
         [OrderStatus.ACCEPTED_BY_MARKETPLACE]: 'ACCEPTED_BY_MARKETPLACE',
         [OrderStatus.COMPLETED]: 'ORDER_COMPLETED',

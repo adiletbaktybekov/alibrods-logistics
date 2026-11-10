@@ -33,6 +33,12 @@ export function OrderForm({ warehouses }: OrderFormProps) {
   const [deliveryDate, setDeliveryDate] = React.useState<string>(minDateString);
   const [pallets, setPallets] = React.useState<number>(0);
   const [boxes, setBoxes] = React.useState<number>(1);
+  const [idempotencyKey] = React.useState<string>(() => {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+    return `ik-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+  });
 
   // Filter warehouses based on delivery date schedule
   const availableWarehouses = React.useMemo(() => {
@@ -61,6 +67,9 @@ export function OrderForm({ warehouses }: OrderFormProps) {
 
   return (
     <form action={formAction} className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+      {/* Hidden Idempotency Key */}
+      <input type="hidden" name="idempotencyKey" value={idempotencyKey} />
+
       {/* Main Form Fields */}
       <div className="lg:col-span-8 space-y-6">
         {state?.error && (

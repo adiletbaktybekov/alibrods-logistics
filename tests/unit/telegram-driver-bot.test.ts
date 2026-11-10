@@ -1,4 +1,13 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+vi.mock('@/database/prisma', async () => {
+  const { createMockPrisma } = await import('../mocks/mock-prisma');
+  const mockPrisma = createMockPrisma();
+  return {
+    prisma: mockPrisma.mockClient,
+  };
+});
+
 import { DriverPairingService } from '@/modules/telegram/pairing.service';
 import {
   DRIVER_ALLOWED_TRANSITIONS,
@@ -11,8 +20,8 @@ import { TelegramBotClient } from '@/integrations/telegram/client';
 import { OrderStatus, PhotoType } from '@prisma/client';
 
 describe('Telegram Driver Bot & Pairing System', () => {
-  beforeEach(() => {
-    DriverPairingService._clearAllCodesForTesting();
+  beforeEach(async () => {
+    await DriverPairingService._clearAllCodesForTesting();
   });
 
   describe('1. Driver Pairing & One-Time Code Verification', () => {

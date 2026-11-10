@@ -90,6 +90,12 @@ enum AuditAction {
   EXPORT_DATA
 }
 
+enum TelegramUpdateStatus {
+  PROCESSING
+  PROCESSED
+  FAILED
+}
+
 // ============================================================================
 // CORE IDENTITY & USER PROFILES
 // ============================================================================
@@ -112,6 +118,10 @@ model User {
   driverProfile   DriverProfile?
   managerProfile  ManagerProfile?
   telegramAccount TelegramAccount?
+
+  // Pairing codes
+  pairingCodes    TelegramPairingCode[]
+  idempotencyKeys IdempotencyKey[]
 
   // Audit and logs
   auditLogs       AuditLog[]
@@ -209,6 +219,22 @@ model TelegramAccount {
   @@index([telegramId])
   @@index([username])
   @@map("telegram_accounts")
+}
+
+model TelegramPairingCode {
+  id        String    @id @default(uuid())
+  code      String    @unique
+  userId    String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([code, usedAt, expiresAt])
+  @@map("telegram_pairing_codes")
 }
 
 // ============================================================================
@@ -446,4 +472,60 @@ model IntegrationSettings {
   @@index([key])
   @@index([isEnabled])
   @@map("integration_settings")
+}
+
+// ============================================================================
+// RELIABILITY & SECURITY INFRASTRUCTURE (P1 FIXES)
+// ============================================================================
+
+model IdempotencyKey {
+  id               String    @id @default(uuid())
+  key              String    @unique
+  userId           String
+  action           String
+  requestHash      String
+  lockToken        String?
+  recoveryAttempts Int       @default(0)
+  responseStatus   Int?
+  responseBody     Json?
+  lockedAt         DateTime  @default(now())
+  expiresAt        DateTime
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, action])
+  @@index([expiresAt])
+  @@index([lockToken])
+  @@map("idempotency_keys")
+}
+
+model TelegramProcessedUpdate {
+  id          String                @id @default(uuid())
+  botType     String
+  updateId    BigInt
+  status      TelegramUpdateStatus  @default(PROCESSING)
+  attempts    Int                   @default(1)
+  error       String?
+  processedAt DateTime?
+  expiresAt   DateTime
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+
+  @@unique([botType, updateId])
+  @@index([expiresAt])
+  @@map("telegram_processed_updates")
+}
+
+model RateLimitEntry {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  points    Int      @default(1)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([expiresAt])
+  @@map("rate_limit_entries")
 }

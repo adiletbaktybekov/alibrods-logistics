@@ -3,11 +3,16 @@ import {
   getClientTelegramBotClient,
   getManagerTelegramBotClient,
 } from '@/integrations/telegram/client';
-import { DriverPairingService } from './pairing.service';
+import {
+  DriverPairingService,
+  ClientPairingService,
+  ManagerPairingService,
+} from './pairing.service';
 import { DriverOrderService } from '@/modules/orders/driver-order.service';
 import { DriverPhotoService } from './photo.service';
 import { STATUS_LABELS } from '@/components/ui/status-badge';
 import { OrderStatus, PhotoType } from '@prisma/client';
+import { prisma } from '@/database/prisma';
 import { logger } from '@/lib/logger';
 
 export interface TelegramIncomingUpdate {
@@ -149,15 +154,167 @@ export class TelegramBotService {
     if (update.message) {
       const msg = update.message;
       const tgId = msg.from.id;
+      const text = msg.text?.trim() || '';
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://alibros.com';
 
+      // 1. Check if client sent pairing code, e.g. "/start ABL-123456" or "ABL-123456"
+      let pairingCode: string | null = null;
+      if (text.startsWith('/start ')) {
+        const potential = text.replace('/start ', '').trim();
+        if (potential.length > 0) pairingCode = potential;
+      } else if (text.toUpperCase().startsWith('ABL-') || (text.length === 10 && text.includes('-'))) {
+        pairingCode = text.trim();
+      }
+
+      if (pairingCode) {
+        const result = await ClientPairingService.verifyAndLinkClient(tgId, pairingCode, {
+          username: msg.from.username,
+          firstName: msg.from.first_name,
+          lastName: msg.from.last_name,
+          languageCode: msg.from.language_code,
+        });
+
+        if (result.success) {
+          await clientBot.sendMessage({
+            chatId: tgId,
+            text: [
+              `✅ <b>Авторизация клиента успешна!</b>`,
+              ``,
+              `Здравствуйте, <b>${result.companyName}</b>!`,
+              `Ваш Telegram-аккаунт успешно привязан к системе AliBros Logistics.`,
+              `Теперь вы будете получать уведомления о статусах ваших доставок и фотоотчёты.`,
+            ].join('\n'),
+            parseMode: 'HTML',
+            replyMarkup: {
+              inline_keyboard: [
+                [
+                  {
+                    text: '📱 Открыть кабинет селлера (Mini App)',
+                    web_app: { url: `${appUrl}/miniapp` },
+                  },
+                ],
+              ],
+            },
+          });
+          return;
+        } else {
+          await clientBot.sendMessage({
+            chatId: tgId,
+            text: `❌ <b>Ошибка привязки:</b>\n${result.error}`,
+            parseMode: 'HTML',
+          });
+          return;
+        }
+      }
+
+      // 2. Check if client is already linked
+      const client = await ClientPairingService.getClientByTelegramId(tgId);
+
+      if (client) {
+        // Linked client: check if requesting orders
+        if (text === '/orders' || text === '📦 Мои заявки' || text.toLowerCase().includes('заявк')) {
+          const activeOrders = await prisma.order.findMany({
+            where: {
+              clientId: client.id,
+              status: {
+                notIn: [
+                  OrderStatus.COMPLETED,
+                  OrderStatus.CANCELLED,
+                  OrderStatus.REJECTED_BY_MANAGER,
+                ],
+              },
+            },
+            include: { warehouse: true },
+            orderBy: { createdAt: 'desc' },
+            take: 5,
+          });
+
+          if (activeOrders.length === 0) {
+            await clientBot.sendMessage({
+              chatId: tgId,
+              text: `📦 <b>У вас нет активных заявок.</b>\nОформить новую поставку можно в личном кабинете.`,
+              parseMode: 'HTML',
+              replyMarkup: {
+                inline_keyboard: [
+                  [
+                    {
+                      text: '📱 Оформить заявку (Mini App)',
+                      web_app: { url: `${appUrl}/miniapp` },
+                    },
+                  ],
+                ],
+              },
+            });
+            return;
+          }
+
+          const lines = [
+            `📦 <b>Ваши активные поставки (${activeOrders.length}):</b>`,
+            ``,
+          ];
+
+          for (const ord of activeOrders) {
+            const statusLabel = STATUS_LABELS[ord.status] || ord.status;
+            const cargo =
+              ord.totalPalletsCount > 0
+                ? `${ord.totalBoxesCount} кор., ${ord.totalPalletsCount} палл.`
+                : `${ord.totalBoxesCount} кор.`;
+            lines.push(
+              `• <code>${ord.orderNumber}</code> → <b>${ord.warehouse.name}</b> (${ord.marketplace})\n  Статус: <b>${statusLabel}</b> (${cargo})\n`
+            );
+          }
+
+          await clientBot.sendMessage({
+            chatId: tgId,
+            text: lines.join('\n'),
+            parseMode: 'HTML',
+            replyMarkup: {
+              inline_keyboard: [
+                [
+                  {
+                    text: '📱 Открыть подробности (Mini App)',
+                    web_app: { url: `${appUrl}/miniapp` },
+                  },
+                ],
+              ],
+            },
+          });
+          return;
+        }
+
+        // Linked client general welcome/menu
+        await clientBot.sendMessage({
+          chatId: tgId,
+          text: [
+            `👋 Здравствуйте, <b>${client.companyName}</b>!`,
+            ``,
+            `Ваш Telegram-аккаунт привязан к кабинету AliBros Logistics.`,
+            `Используйте /orders для просмотра активных поставок или откройте Mini App.`,
+          ].join('\n'),
+          parseMode: 'HTML',
+          replyMarkup: {
+            inline_keyboard: [
+              [
+                {
+                  text: '📱 Открыть кабинет селлера (Mini App)',
+                  web_app: { url: `${appUrl}/miniapp` },
+                },
+              ],
+            ],
+          },
+        });
+        return;
+      }
+
+      // Unlinked client welcome
       await clientBot.sendMessage({
         chatId: tgId,
         text: [
           `👋 <b>Добро пожаловать в AliBros Logistics!</b>`,
           ``,
           `Этот бот предназначен для клиентов и селлеров маркетплейсов.`,
-          `Нажмите кнопку ниже, чтобы открыть личный кабинет (Telegram Mini App), рассчитать доставку, оформить заявку и отслеживать статус грузов.`,
+          `• Для привязки аккаунта введите одноразовый код (например, <code>ABL-A1B2C3</code>).`,
+          `• Или нажмите кнопку ниже, чтобы открыть мобильный личный кабинет селлера.`,
         ].join('\n'),
         parseMode: 'HTML',
         replyMarkup: {
@@ -188,15 +345,117 @@ export class TelegramBotService {
     if (update.message) {
       const msg = update.message;
       const tgId = msg.from.id;
+      const text = msg.text?.trim() || '';
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://alibros.com';
 
+      // 1. Check if manager sent pairing code
+      let pairingCode: string | null = null;
+      if (text.startsWith('/start ')) {
+        const potential = text.replace('/start ', '').trim();
+        if (potential.length > 0) pairingCode = potential;
+      } else if (text.toUpperCase().startsWith('ABL-') || (text.length === 10 && text.includes('-'))) {
+        pairingCode = text.trim();
+      }
+
+      if (pairingCode) {
+        const result = await ManagerPairingService.verifyAndLinkManager(tgId, pairingCode, {
+          username: msg.from.username,
+          firstName: msg.from.first_name,
+          lastName: msg.from.last_name,
+          languageCode: msg.from.language_code,
+        });
+
+        if (result.success) {
+          await managerBot.sendMessage({
+            chatId: tgId,
+            text: [
+              `✅ <b>Авторизация менеджера успешна!</b>`,
+              ``,
+              `Здравствуйте, <b>${result.fullName}</b>!`,
+              `Ваш аккаунт подтверждён для управления и мониторинга логистических операций AliBros.`,
+              `Все критические уведомления по заявкам транслируются в общую рабочую группу.`,
+            ].join('\n'),
+            parseMode: 'HTML',
+          });
+          return;
+        } else {
+          await managerBot.sendMessage({
+            chatId: tgId,
+            text: `❌ <b>Ошибка привязки:</b>\n${result.error}`,
+            parseMode: 'HTML',
+          });
+          return;
+        }
+      }
+
+      // 2. Check if manager is linked
+      const managerUser = await ManagerPairingService.getManagerByTelegramId(tgId);
+
+      if (managerUser) {
+        if (text === '/status' || text === '/orders' || text === '/stats') {
+          const [pendingCount, inProgressCount] = await Promise.all([
+            prisma.order.count({
+              where: {
+                status: {
+                  in: [OrderStatus.CREATED, OrderStatus.PENDING_CONFIRMATION],
+                },
+              },
+            }),
+            prisma.order.count({
+              where: {
+                status: {
+                  in: [
+                    OrderStatus.CONFIRMED,
+                    OrderStatus.ASSIGNED_TO_DRIVER,
+                    OrderStatus.ACCEPTED_BY_DRIVER,
+                    OrderStatus.PICKED_UP,
+                    OrderStatus.IN_TRANSIT,
+                    OrderStatus.DELIVERED_TO_WAREHOUSE,
+                  ],
+                },
+              },
+            }),
+          ]);
+
+          await managerBot.sendMessage({
+            chatId: tgId,
+            text: [
+              `📊 <b>Оперативная сводка AliBros:</b>`,
+              ``,
+              `⏳ Ожидают подтверждения: <b>${pendingCount}</b>`,
+              `🚚 В работе / на рейсе: <b>${inProgressCount}</b>`,
+              ``,
+              `🔗 <a href="${appUrl}/admin/orders">Открыть панель управления заявками</a>`,
+            ].join('\n'),
+            parseMode: 'HTML',
+          });
+          return;
+        }
+
+        await managerBot.sendMessage({
+          chatId: tgId,
+          text: [
+            `🤖 <b>AliBros Manager Bot</b>`,
+            ``,
+            `Вы авторизованы как сотрудник AliBros Logistics.`,
+            `• /status — сводка активных рейсов`,
+            `• Оперативные события направляются в тему «Отгрузка» рабочей группы.`,
+            ``,
+            `🔗 <a href="${appUrl}/admin">Панель администратора</a>`,
+          ].join('\n'),
+          parseMode: 'HTML',
+        });
+        return;
+      }
+
+      // Unlinked user
       await managerBot.sendMessage({
         chatId: tgId,
         text: [
           `🤖 <b>AliBros Manager Bot</b>`,
           ``,
           `Бот оперативных уведомлений команды логистики AliBros.`,
-          `Все события по заявкам и статусам отправляются в общую рабочую группу.`,
+          `Для привязки аккаунта отправьте код привязки от администратора системы.`,
           ``,
           `Для перехода в веб-панель управления откройте: <a href="${appUrl}/admin">Панель администратора</a>`,
         ].join('\n'),

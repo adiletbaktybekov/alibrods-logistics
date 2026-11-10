@@ -9,10 +9,13 @@ export type TelegramGroupEventType =
   | 'DRIVER_ASSIGNED'
   | 'DRIVER_ACCEPTED'
   | 'CARGO_PICKED_UP'
+  | 'IN_TRANSIT'
   | 'DELIVERED_TO_WAREHOUSE'
   | 'ACCEPTED_BY_MARKETPLACE'
   | 'ORDER_COMPLETED'
-  | 'COST_CALCULATED';
+  | 'COST_CALCULATED'
+  | 'PHOTO_UPLOADED'
+  | 'ORDER_PROBLEM';
 
 export interface TelegramOrderNotificationPayload {
   orderId: string;
@@ -26,6 +29,7 @@ export interface TelegramOrderNotificationPayload {
   driverName?: string;
   rejectionReason?: string;
   managerComment?: string;
+  comment?: string;
   costAmount?: number;
   currency?: string;
 }
@@ -152,6 +156,14 @@ export class TelegramNotificationService {
         statusText = 'Груз забран у селлера. Подготовка к отправке / в пути.';
         break;
 
+      case 'IN_TRANSIT':
+        eventTitle = `🚚 Груз в пути: #${payload.orderNumber}`;
+        statusText = `Груз направляется на склад назначения (${payload.warehouseName}).`;
+        if (payload.driverName) {
+          extraLine = `Водитель: <b>${payload.driverName}</b>`;
+        }
+        break;
+
       case 'DELIVERED_TO_WAREHOUSE':
         eventTitle = `🏢 Груз прибыл на склад: #${payload.orderNumber}`;
         statusText = `Прибыл на склад маркетплейса (${payload.warehouseName}). Ожидание разгрузки.`;
@@ -165,6 +177,19 @@ export class TelegramNotificationService {
       case 'ORDER_COMPLETED':
         eventTitle = `🎉 Заявка #${payload.orderNumber} завершена`;
         statusText = 'Рейс полностью завершён. Все отчётные документы сформированы.';
+        break;
+
+      case 'PHOTO_UPLOADED':
+        eventTitle = `📸 Загружен фотоотчёт: #${payload.orderNumber}`;
+        statusText = payload.comment || 'Водитель прикрепил подтверждающую фотографию к заявке.';
+        if (payload.driverName) {
+          extraLine = `Водитель: <b>${payload.driverName}</b>`;
+        }
+        break;
+
+      case 'ORDER_PROBLEM':
+        eventTitle = `⚠️ Внимание: проблема по заявке #${payload.orderNumber}`;
+        statusText = payload.comment || 'Зафиксировано обращение или проблема при доставке.';
         break;
 
       case 'COST_CALCULATED': {

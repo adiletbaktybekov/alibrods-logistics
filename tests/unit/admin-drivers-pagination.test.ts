@@ -1,8 +1,20 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+vi.mock('@/database/prisma', async () => {
+  const { createMockPrisma } = await import('../mocks/mock-prisma');
+  const mockPrisma = createMockPrisma();
+  return {
+    prisma: mockPrisma.mockClient,
+  };
+});
+
 import { buildDriversPaginationUrl } from '@/lib/pagination';
 import { DriverPairingService } from '@/modules/telegram/pairing.service';
 
 describe('Admin Drivers & Pairing Security (Unit Tests)', () => {
+  beforeEach(async () => {
+    await DriverPairingService._clearAllCodesForTesting();
+  });
   describe('1. URL Search Params & Filter Preservation (buildDriversPaginationUrl)', () => {
     it('should return /admin/drivers when targetPage is 1 and no filters are present', () => {
       const url = buildDriversPaginationUrl(1, {});

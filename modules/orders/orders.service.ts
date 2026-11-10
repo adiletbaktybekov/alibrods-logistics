@@ -4,10 +4,11 @@ import { NotFoundError, ForbiddenError, ValidationError } from '@/lib/errors';
 import { assertOrderAccess } from '@/server/guards';
 import { AuthenticatedUser } from '@/types/rbac';
 import { AuditService } from '@/modules/audit/audit.service';
-import { AuditAction, MarketplaceType, OrderStatus, Prisma, UserRole } from '@prisma/client';
+import { AuditAction, AssignmentStatus, MarketplaceType, OrderStatus, Prisma, UserRole } from '@prisma/client';
 import { WarehousesService } from '@/modules/warehouses/warehouses.service';
 import { CreateOrderDto, CreateClientOrderDto, UpdateOrderStatusDto, AssignDriverDto } from './orders.dto';
 import { NotificationDispatcherService } from '@/modules/notifications/dispatcher.service';
+import { IdempotencyService } from '@/lib/security/idempotency.service';
 
 export interface AdminDashboardDailyPoint {
   date: string;
@@ -68,54 +69,76 @@ export class OrdersService {
     // Server-side schedule validation
     WarehousesService.assertWarehouseAvailable(warehouse, dto.deliveryDate);
 
-    const orderNumber = generateOrderNumber();
+    const idempotencyPayload = {
+      clientId: client.id,
+      warehouseId: dto.warehouseId,
+      deliveryDate: dto.deliveryDate,
+      totalBoxesCount: dto.totalBoxesCount,
+      totalPalletsCount: dto.totalPalletsCount,
+      clientComment: dto.clientComment,
+    };
 
-    const itemsData = Array.from({ length: dto.totalBoxesCount }, (_, idx) => ({
-      boxNumber: idx + 1,
-      quantity: 1,
-      cargoDescription: `Грузовое место (коробка) №${idx + 1}`,
-    }));
+    const { result } = await IdempotencyService.runWithIdempotency(
+      {
+        key: dto.idempotencyKey,
+        userId: user.id,
+        action: 'CREATE_CLIENT_ORDER',
+        payload: idempotencyPayload,
+      },
+      async (tx) => {
+        const orderNumber = dto.orderNumber || generateOrderNumber();
 
-    const order = await prisma.order.create({
-      data: {
-        orderNumber,
-        clientId: client.id,
-        warehouseId: warehouse.id,
-        marketplace: warehouse.marketplace,
-        status: OrderStatus.CREATED,
-        scheduledPickupAt: dto.deliveryDate,
-        totalBoxesCount: dto.totalBoxesCount,
-        totalPalletsCount: dto.totalPalletsCount,
-        clientComment: dto.clientComment,
-        items: {
-          create: itemsData,
-        },
-        statusHistory: {
-          create: {
-            toStatus: OrderStatus.CREATED,
-            changedById: user.id,
-            comment: 'Заявка оформлена через личный кабинет клиента',
+        const itemsData = Array.from({ length: dto.totalBoxesCount }, (_, idx) => ({
+          boxNumber: idx + 1,
+          quantity: 1,
+          cargoDescription: `Грузовое место (коробка) №${idx + 1}`,
+        }));
+
+        const order = await tx.order.create({
+          data: {
+            orderNumber,
+            clientId: client.id,
+            warehouseId: warehouse.id,
+            marketplace: warehouse.marketplace,
+            status: OrderStatus.CREATED,
+            scheduledPickupAt: dto.deliveryDate,
+            totalBoxesCount: dto.totalBoxesCount,
+            totalPalletsCount: dto.totalPalletsCount,
+            clientComment: dto.clientComment,
+            items: {
+              create: itemsData,
+            },
+            statusHistory: {
+              create: {
+                toStatus: OrderStatus.CREATED,
+                changedById: user.id,
+                comment: 'Заявка оформлена через личный кабинет клиента',
+              },
+            },
           },
-        },
-      },
-      include: {
-        warehouse: true,
-        items: true,
-      },
-    });
+          include: {
+            warehouse: true,
+            items: true,
+          },
+        });
 
+        return order;
+      }
+    );
+
+    // Audit log & notifications execute safely after atomic transaction COMMIT
     await AuditService.log({
       userId: user.id,
       action: AuditAction.CREATE,
       resource: 'Order',
-      resourceId: order.id,
+      resourceId: result.id,
       ipAddress,
-      metadata: { orderNumber: order.orderNumber, marketplace: order.marketplace },
+      metadata: { orderNumber: result.orderNumber, marketplace: result.marketplace },
     });
 
-    NotificationDispatcherService.notifyOrderCreated(order.id).catch(() => {});
+    NotificationDispatcherService.notifyOrderCreated(result.id).catch(() => {});
 
-    return order;
+    return result;
   }
 
   /**
@@ -483,7 +506,7 @@ export class OrdersService {
   }
 
   /**
-   * Assign driver to an order
+   * Assign driver to an order atomically within a Prisma transaction
    */
   public static async assignDriver(
     user: AuthenticatedUser,
@@ -495,56 +518,135 @@ export class OrdersService {
       throw new ForbiddenError('Only managers and administrators can assign drivers to orders');
     }
 
-    const order = await prisma.order.findUnique({ where: { id: orderId } });
-    if (!order) throw new NotFoundError('Order', orderId);
+    const result = await prisma.$transaction(async (tx) => {
+      // Concurrency control: Acquire exclusive row lock on the target order in PostgreSQL
+      // to serialize concurrent assignDriver calls and prevent race conditions
+      if (process.env.DATABASE_URL) {
+        try {
+          await tx.$queryRaw`
+            SELECT id, status FROM "orders" WHERE id = ${orderId} FOR UPDATE
+          `;
+        } catch {
+          // If running under mock or SQLite test environment, proceed gracefully
+        }
+      }
 
-    // Rule: Driver can only be assigned to a confirmed order
-    if (order.status !== OrderStatus.CONFIRMED) {
-      throw new ValidationError(
-        `Водитель может быть назначен только на подтверждённую заявку (текущий статус: ${order.status})`
+      const order = await tx.order.findUnique({
+        where: { id: orderId },
+        include: {
+          assignments: {
+            where: {
+              status: {
+                in: [
+                  AssignmentStatus.ASSIGNED,
+                  AssignmentStatus.ACCEPTED,
+                  AssignmentStatus.IN_PROGRESS,
+                ],
+              },
+            },
+          },
+        },
+      });
+      if (!order) throw new NotFoundError('Order', orderId);
+
+      // Rule: Driver can only be assigned to a confirmed order, or reassigned if already in ASSIGNED_TO_DRIVER
+      if (
+        order.status !== OrderStatus.CONFIRMED &&
+        order.status !== OrderStatus.ASSIGNED_TO_DRIVER
+      ) {
+        throw new ValidationError(
+          `Водитель может быть назначен только на подтверждённую заявку (текущий статус: ${order.status})`
+        );
+      }
+
+      const driver = await tx.driverProfile.findUnique({
+        where: { id: dto.driverProfileId },
+        include: { user: true },
+      });
+      if (!driver) throw new NotFoundError('DriverProfile', dto.driverProfileId);
+
+      if (driver.user && !driver.user.isActive) {
+        throw new ValidationError('Учётная запись водителя деактивирована');
+      }
+
+      // Check if this driver is already actively assigned to this order
+      const activeAssignment = order.assignments.find(
+        (a) =>
+          a.status === AssignmentStatus.ASSIGNED ||
+          a.status === AssignmentStatus.ACCEPTED ||
+          a.status === AssignmentStatus.IN_PROGRESS
       );
-    }
 
-    const driver = await prisma.driverProfile.findUnique({ where: { id: dto.driverProfileId } });
-    if (!driver) throw new NotFoundError('DriverProfile', dto.driverProfileId);
+      if (activeAssignment && activeAssignment.driverId === dto.driverProfileId) {
+        throw new ValidationError('Этот водитель уже назначен на данную заявку');
+      }
 
-    const assignment = await prisma.orderAssignment.create({
-      data: {
-        orderId,
-        driverId: dto.driverProfileId,
-        notes: dto.notes,
-      },
-    });
+      // Reassignment: cancel previous active assignment atomically
+      if (activeAssignment) {
+        await tx.orderAssignment.update({
+          where: { id: activeAssignment.id },
+          data: {
+            status: AssignmentStatus.CANCELLED,
+            notes: activeAssignment.notes
+              ? `${activeAssignment.notes} (Отменено менеджером: переназначен на другого водителя)`
+              : 'Отменено менеджером: переназначен на другого водителя',
+          },
+        });
+      }
 
-    // Update order status to ASSIGNED_TO_DRIVER
-    await prisma.order.update({
-      where: { id: orderId },
-      data: { status: OrderStatus.ASSIGNED_TO_DRIVER },
-    });
+      // 1. Create new OrderAssignment
+      const assignment = await tx.orderAssignment.create({
+        data: {
+          orderId,
+          driverId: dto.driverProfileId,
+          notes: dto.notes,
+          status: AssignmentStatus.ASSIGNED,
+        },
+      });
 
-    await prisma.orderStatusHistory.create({
-      data: {
-        orderId,
-        fromStatus: order.status,
-        toStatus: OrderStatus.ASSIGNED_TO_DRIVER,
-        changedById: user.id,
-        comment: `Driver ${driver.fullName} assigned to order`,
-      },
+      // 2. Update order status to ASSIGNED_TO_DRIVER
+      await tx.order.update({
+        where: { id: orderId },
+        data: { status: OrderStatus.ASSIGNED_TO_DRIVER },
+      });
+
+      // 3. Create OrderStatusHistory
+      await tx.orderStatusHistory.create({
+        data: {
+          orderId,
+          fromStatus: order.status,
+          toStatus: OrderStatus.ASSIGNED_TO_DRIVER,
+          changedById: user.id,
+          comment: activeAssignment
+            ? `Driver reassigned to ${driver.fullName}`
+            : `Driver ${driver.fullName} assigned to order`,
+        },
+      });
+
+      return {
+        assignment,
+        driverFullName: driver.fullName,
+        previousDriverId: activeAssignment?.driverId,
+      };
     });
 
     await AuditService.log({
       userId: user.id,
       action: AuditAction.ASSIGNMENT_CHANGE,
       resource: 'OrderAssignment',
-      resourceId: assignment.id,
-      metadata: { orderId, driverProfileId: dto.driverProfileId },
+      resourceId: result.assignment.id,
+      metadata: {
+        orderId,
+        driverProfileId: dto.driverProfileId,
+        previousDriverId: result.previousDriverId,
+      },
       ipAddress,
     });
 
     // Notify driver via Telegram in background
     NotificationDispatcherService.notifyDriverOrderAssigned(orderId, dto.driverProfileId).catch(() => {});
 
-    return assignment;
+    return result.assignment;
   }
 
   /**

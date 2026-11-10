@@ -100,7 +100,14 @@ export class GoogleSheetsClient {
     }
 
     try {
-      const formattedKey = this.privateKey!.replace(/\\n/g, '\n');
+      let key = this.privateKey!.trim();
+      if (
+        (key.startsWith('"') && key.endsWith('"')) ||
+        (key.startsWith("'") && key.endsWith("'"))
+      ) {
+        key = key.slice(1, -1);
+      }
+      const formattedKey = key.replace(/\\n/g, '\n').trim();
 
       const header = Buffer.from(
         JSON.stringify({ alg: 'RS256', typ: 'JWT' })
