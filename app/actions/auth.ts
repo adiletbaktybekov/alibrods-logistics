@@ -120,6 +120,10 @@ export async function registerAction(prevState: unknown, formData: FormData) {
   const password = formData.get('password')?.toString() || '';
   const confirmPassword = formData.get('confirmPassword')?.toString() || '';
 
+  if (password.length < 8) {
+    return { success: false, error: 'Пароль должен содержать как минимум 8 символов' };
+  }
+
   if (password !== confirmPassword) {
     return { success: false, error: 'Пароли не совпадают' };
   }

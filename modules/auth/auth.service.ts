@@ -1,5 +1,5 @@
 import { prisma } from '@/database/prisma';
-import { hashPassword, verifyPassword, validatePasswordComplexity } from '@/lib/security/password';
+import { hashPassword, verifyPassword, validateClientPassword } from '@/lib/security/password';
 import { signAuthToken } from '@/lib/security/jwt';
 import { UnauthorizedError, ConflictError, ValidationError } from '@/lib/errors';
 import { AuditService } from '@/modules/audit/audit.service';
@@ -62,9 +62,9 @@ export class AuthService {
   }
 
   public static async registerClient(dto: RegisterClientDto, ipAddress?: string, userAgent?: string) {
-    const passwordCheck = validatePasswordComplexity(dto.password);
+    const passwordCheck = validateClientPassword(dto.password);
     if (!passwordCheck.isValid) {
-      throw new ValidationError(passwordCheck.error || 'Пароль не соответствует требованиям безопасности');
+      throw new ValidationError(passwordCheck.error || 'Пароль должен содержать как минимум 8 символов');
     }
 
     const existing = await prisma.user.findFirst({

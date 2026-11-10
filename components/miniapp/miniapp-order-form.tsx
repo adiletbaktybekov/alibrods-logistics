@@ -8,7 +8,7 @@ import {
   isWarehouseOpenOnDate,
   getDayOfWeekFromDate,
   RUSSIAN_DAY_NAMES,
-} from '@/modules/warehouses/warehouses.service';
+} from '@/modules/warehouses/warehouses.types';
 import { useTelegramWebApp } from './telegram-webapp-provider';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';

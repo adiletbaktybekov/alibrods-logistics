@@ -30,7 +30,8 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
 }
 
 /**
- * Validates password complexity against 5 strict criteria:
+ * Validates staff password complexity (SUPER_ADMIN, ADMIN, MANAGER, ACCOUNTANT)
+ * against 5 strict criteria:
  * 1. Min 12 chars
  * 2. At least 1 uppercase letter (A-Z)
  * 3. At least 1 lowercase letter (a-z)
@@ -52,6 +53,21 @@ export function validatePasswordComplexity(password: string): { isValid: boolean
   }
   if (!/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?`~]/.test(password)) {
     return { isValid: false, error: 'Пароль должен содержать хотя бы один специальный символ (!@#$%^&*()_+-=[]{};\':"\\|,.<>/?)' };
+  }
+  return { isValid: true };
+}
+
+// Alias for explicit staff validation clarity
+export const validateStaffPasswordComplexity = validatePasswordComplexity;
+
+/**
+ * Validates client / seller registration password:
+ * 1. Minimum 8 characters.
+ * No requirements for uppercase, lowercase, digits, or special characters.
+ */
+export function validateClientPassword(password: string): { isValid: boolean; error?: string } {
+  if (!password || password.length < 8) {
+    return { isValid: false, error: 'Пароль должен содержать как минимум 8 символов' };
   }
   return { isValid: true };
 }

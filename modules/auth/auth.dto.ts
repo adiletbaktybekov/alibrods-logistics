@@ -7,12 +7,12 @@ export const loginSchema = z.object({
 });
 
 export const registerClientSchema = z.object({
-  email: z.string().email('Invalid email address').optional(),
-  phone: z.string().regex(/^\+?[1-9]\d{7,14}$/, 'Invalid international phone number format'),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
-  companyName: z.string().min(2, 'Company name is required'),
-  contactPerson: z.string().min(2, 'Contact person name is required'),
-  inn: z.string().regex(/^\d{10,14}$/, 'INN must be 10, 12, or 14 digits').optional(),
+  email: z.string().email('Некорректный email адрес').optional().or(z.literal('')),
+  phone: z.string().regex(/^\+?[1-9]\d{7,14}$/, 'Неверный формат международного номера телефона'),
+  password: z.string().min(8, 'Пароль должен содержать как минимум 8 символов'),
+  companyName: z.string().min(2, 'Название компании обязательно'),
+  contactPerson: z.string().min(2, 'Контактное лицо обязательно'),
+  inn: z.string().regex(/^\d{10,14}$/, 'ИНН должен содержать от 10 до 14 цифр').optional().or(z.literal('')),
 });
 
 export const telegramAuthSchema = z.object({

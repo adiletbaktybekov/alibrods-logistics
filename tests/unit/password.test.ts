@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { hashPassword, verifyPassword, validatePasswordComplexity } from '@/lib/security/password';
+import { hashPassword, verifyPassword, validatePasswordComplexity, validateClientPassword } from '@/lib/security/password';
 import { validatePasswordComplexity as validateAdminPassword } from '../../scripts/init-admin';
 
 describe('Password Security (Argon2id)', () => {
@@ -82,4 +82,46 @@ describe('Admin Password Complexity Validation', () => {
     expect(result.error).toContain('специальный');
   });
 });
+
+describe('Client / Seller Registration Password Policy (Simplified)', () => {
+  it('should reject passwords shorter than 8 characters (7 chars -> error)', () => {
+    const result = validateClientPassword('1234567');
+    expect(result.isValid).toBe(false);
+    expect(result.error).toBe('Пароль должен содержать как минимум 8 символов');
+  });
+
+  it('should accept passwords with exactly 8 characters', () => {
+    const result = validateClientPassword('password');
+    expect(result.isValid).toBe(true);
+    expect(result.error).toBeUndefined();
+  });
+
+  it('should accept passwords with 12 characters', () => {
+    const result = validateClientPassword('twelvecharss');
+    expect(result.isValid).toBe(true);
+    expect(result.error).toBeUndefined();
+  });
+
+  it('should accept passwords without uppercase letters (no uppercase required)', () => {
+    const result = validateClientPassword('alllowercase8');
+    expect(result.isValid).toBe(true);
+  });
+
+  it('should accept passwords without special characters (no special char required)', () => {
+    const result = validateClientPassword('alphanumeric123');
+    expect(result.isValid).toBe(true);
+  });
+
+  it('should accept passwords without digits (no digits required)', () => {
+    const result = validateClientPassword('onlylettershere');
+    expect(result.isValid).toBe(true);
+  });
+
+  it('should maintain strict separation: client-valid password is rejected by staff policy', () => {
+    const clientPass = 'simplepass8';
+    expect(validateClientPassword(clientPass).isValid).toBe(true);
+    expect(validatePasswordComplexity(clientPass).isValid).toBe(false);
+  });
+});
+
 

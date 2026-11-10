@@ -98,9 +98,10 @@ export default function RegisterPage() {
               id="password"
               name="password"
               type="password"
-              placeholder="Мин. 8 знаков"
+              placeholder="Минимум 8 символов"
               required
             />
+            <p className="mt-1 text-xs text-slate-500">Минимум 8 символов</p>
           </div>
 
           <div>
@@ -111,7 +112,7 @@ export default function RegisterPage() {
               id="confirmPassword"
               name="confirmPassword"
               type="password"
-              placeholder="Повтор пароля"
+              placeholder="Повторите пароль"
               required
             />
           </div>

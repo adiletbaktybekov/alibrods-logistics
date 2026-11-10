@@ -9,7 +9,7 @@ import {
   isWarehouseOpenOnDate,
   getDayOfWeekFromDate,
   RUSSIAN_DAY_NAMES,
-} from '@/modules/warehouses/warehouses.service';
+} from '@/modules/warehouses/warehouses.types';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
