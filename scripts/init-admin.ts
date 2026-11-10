@@ -1,9 +1,17 @@
 import readline from 'node:readline';
 import { Writable } from 'node:stream';
+import { createRequire } from 'node:module';
 import { PrismaClient, UserRole, AuditAction } from '@prisma/client';
 import argon2 from 'argon2';
 
-const prisma = new PrismaClient();
+const require = createRequire(import.meta.url);
+const {
+  verifyTargetDatabase: checkTargetSafety,
+  ALLOWED_ENDPOINT_ID,
+  ALLOWED_DATABASE_NAME,
+} = require('./check-db-target.js');
+
+let prisma: PrismaClient;
 
 /**
  * Валидация сложности пароля администратора:
@@ -83,51 +91,28 @@ function promptVisible(query: string): Promise<string> {
 
 /**
  * Строгая проверка целевой базы данных:
- * Разрешён запуск исключительно на Staging базе `alibros_staging` в регионе Neon Frankfurt.
+ * Использует централизованный валидатор scripts/check-db-target.js.
+ * Разрешён запуск исключительно на dedicated Staging endpoint ep-restless-wave-b9k0ye9q / neondb.
  */
-function verifyTargetDatabase() {
-  const rawUrl = process.env.DIRECT_URL || process.env.DATABASE_URL || '';
-  if (!rawUrl) {
-    console.error('❌ Ошибка безопасности: DATABASE_URL или DIRECT_URL не найдены в окружении или .env.local.');
-    process.exit(1);
-  }
-
-  let parsedUrl: URL;
-  try {
-    parsedUrl = new URL(rawUrl);
-  } catch {
-    console.error('❌ Ошибка: Некорректный формат строки подключения к базе данных.');
-    process.exit(1);
-  }
-
-  const dbName = parsedUrl.pathname.replace(/^\//, '');
-  const dbHost = parsedUrl.hostname;
-
+export function verifyTargetDatabase(databaseUrl = process.env.DATABASE_URL, directUrl = process.env.DIRECT_URL) {
   console.log('----------------------------------------------------------------');
-  console.log(`📡 Целевая база: ${dbName}`);
-  console.log(`🌐 Хост базы:    ${dbHost}`);
+  console.log(`🔒 Проверка безопасности целевой базы данных (${ALLOWED_ENDPOINT_ID}/${ALLOWED_DATABASE_NAME})...`);
 
-  const ALLOWED_DB = 'alibros_staging';
-  const IS_FRANKFURT_NEON =
-    dbHost.includes('eu-central-1') &&
-    dbHost.includes('neon.tech') &&
-    dbHost.includes('ep-dawn-wildflower-b98aa1ax');
-
-  if (dbName !== ALLOWED_DB || !IS_FRANKFURT_NEON) {
+  try {
+    const res = checkTargetSafety(databaseUrl, directUrl);
+    console.log(`✅ Целевая база подтверждена: Neon Staging (${res.endpointId}/${res.database})`);
+    console.log(`🌐 Direct Host: ${res.directHost}`);
+    console.log(`📡 Pooled Host: ${res.pooledHost}`);
+    console.log('----------------------------------------------------------------');
+    return res;
+  } catch (err: unknown) {
     console.error('----------------------------------------------------------------');
     console.error('🛑 АВАРИЙНАЯ ОСТАНОВКА БЕЗОПАСНОСТИ:');
-    console.error('   Скрипт настроен строго для Neon Staging!');
-    console.error(`   Ожидалась база: "${ALLOWED_DB}"`);
-    console.error(`   Ожидался хост Neon Frankfurt: ep-dawn-wildflower-b98aa1ax*.eu-central-1.aws.neon.tech`);
-    console.error(`   Фактическая база: "${dbName}"`);
-    console.error(`   Фактический хост: "${dbHost}"`);
-    console.error('   Запуск заблокирован для предотвращения изменения Production или чужой базы данных.');
+    console.error(err instanceof Error ? err.message : String(err));
+    console.error('Запуск заблокирован для предотвращения изменения Production или неразрешённой базы данных.');
     console.error('----------------------------------------------------------------');
     process.exit(1);
   }
-
-  console.log('✅ Проверка безопасности базы: подтверждён целевой контур Neon Staging (Frankfurt).');
-  console.log('----------------------------------------------------------------');
 }
 
 /**
@@ -209,8 +194,12 @@ function getAdminFullName(): string {
 async function initAdmin() {
   console.log('🚀 Инициализация первого SUPER_ADMIN для AliBros Logistics');
 
-  // 1. Строгая проверка целевой базы данных
+  // 1. Строгая проверка целевой базы данных до подключения к ней
   verifyTargetDatabase();
+
+  if (!prisma) {
+    prisma = new PrismaClient();
+  }
 
   // 2. Проверяем, существует ли уже SUPER_ADMIN в базе данных
   const existingSuperAdmin = await prisma.user.findFirst({
@@ -306,6 +295,8 @@ if (process.argv[1]?.includes('init-admin')) {
       process.exit(1);
     })
     .finally(async () => {
-      await prisma.$disconnect();
+      if (prisma) {
+        await prisma.$disconnect();
+      }
     });
 }

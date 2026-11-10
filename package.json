@@ -16,6 +16,7 @@
     "prisma:migrate:deploy": "node --env-file-if-exists=.env.local ./node_modules/prisma/build/index.js migrate deploy",
     "prisma:migrate:status": "node --env-file-if-exists=.env.local ./node_modules/prisma/build/index.js migrate status",
     "prisma:seed": "node --env-file-if-exists=.env.local --experimental-strip-types prisma/seed.ts",
+    "admin:init": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/init-admin.ts",
     "db:target": "node --env-file-if-exists=.env.local scripts/check-db-target.js",
     "sheets": "node --env-file-if-exists=.env.local scripts/verify-google-sheets.js",
     "sheets:verify": "node --env-file-if-exists=.env.local scripts/verify-google-sheets.js",
