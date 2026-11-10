@@ -23,19 +23,81 @@ export {
 };
 
 export class WarehousesService {
+  private static seedingPromise: Promise<void> | null = null;
+
+  /**
+   * Обеспечивает наличие 12 подтверждённых складов с детерминированными UUID в БД.
+   * Идемпотентно: если склады уже есть в БД, ничего не перезаписывает.
+   * Защищено от параллельного выполнения через in-flight promise deduplication.
+   */
+  public static async ensureConfirmedWarehouses(): Promise<void> {
+    if (!process.env.DATABASE_URL) return;
+
+    if (this.seedingPromise) {
+      return this.seedingPromise;
+    }
+
+    this.seedingPromise = (async () => {
+      try {
+        const totalCount = await prisma.warehouse.count();
+        if (totalCount > 0) {
+          return;
+        }
+
+        for (const wh of CONFIRMED_WAREHOUSES) {
+          await prisma.warehouse.upsert({
+            where: { code: wh.code },
+            update: {}, // Не перезаписываем пользовательские изменения
+            create: {
+              id: wh.id,
+              name: wh.name,
+              code: wh.code,
+              marketplace: wh.marketplace,
+              operatingHours: wh.scheduleDescription,
+              address: wh.address || wh.name,
+              city: wh.city || 'Москва и МО',
+              isActive: wh.isActive,
+            },
+          });
+        }
+      } catch {
+        // Non-fatal fallback to in-memory catalog
+      } finally {
+        this.seedingPromise = null;
+      }
+    })();
+
+    return this.seedingPromise;
+  }
+
   /**
    * Возвращает подтверждённые склады
    */
   public static async list(marketplace?: MarketplaceType): Promise<WarehouseItem[]> {
     if (process.env.DATABASE_URL) {
       try {
-        const records = await prisma.warehouse.findMany({
+        let records = await prisma.warehouse.findMany({
           where: {
             isActive: true,
             ...(marketplace ? { marketplace } : {}),
           },
           orderBy: { name: 'asc' },
         });
+
+        // Самовосстановление срабатывает ТОЛЬКО если таблица складов в БД полностью пуста
+        if (records.length === 0) {
+          const totalCount = await prisma.warehouse.count();
+          if (totalCount === 0) {
+            await this.ensureConfirmedWarehouses();
+            records = await prisma.warehouse.findMany({
+              where: {
+                isActive: true,
+                ...(marketplace ? { marketplace } : {}),
+              },
+              orderBy: { name: 'asc' },
+            });
+          }
+        }
 
         if (records.length > 0) {
           // Обогащаем данными расписания по коду
@@ -78,7 +140,15 @@ export class WarehousesService {
   public static async getById(id: string): Promise<WarehouseItem> {
     if (process.env.DATABASE_URL) {
       try {
-        const wh = await prisma.warehouse.findUnique({ where: { id } });
+        let wh = await prisma.warehouse.findUnique({ where: { id } });
+        if (!wh) {
+          const confirmedMatch = CONFIRMED_WAREHOUSES.find((c) => c.id === id);
+          if (confirmedMatch) {
+            await this.ensureConfirmedWarehouses();
+            wh = await prisma.warehouse.findUnique({ where: { id } });
+          }
+        }
+
         if (wh) {
           const confirmed = CONFIRMED_WAREHOUSES.find((c) => c.code === wh.code || c.name === wh.name);
           return {
