@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { isCronAuthorized } from '@/lib/security/cron-auth';
 import { GoogleSheetsSyncService } from '@/modules/integrations/google-sheets-sync.service';
 import { logger, safeLogError } from '@/lib/logger';
 import { UserRole } from '@prisma/client';
@@ -8,27 +9,44 @@ export const maxDuration = 60;
 
 /**
  * Automated Cron Route for Google Sheets Bidirectional Accounting Sync.
- * Can be triggered on a schedule (e.g. every 15-30 minutes) via Vercel Cron,
- * external scheduler, or GitHub Actions.
+ * Can be triggered on a schedule (e.g. every 15 minutes) via external scheduler (cron-job.org).
  *
  * Security:
  * Requires authorization header: `Authorization: Bearer <CRON_SECRET>`
  */
 export async function GET(request: NextRequest) {
   const cronSecret = process.env.CRON_SECRET;
-  const authHeader = request.headers.get('authorization');
+  const isProdOrStaging =
+    process.env.NODE_ENV === 'production' ||
+    process.env.VERCEL === '1' ||
+    !!process.env.VERCEL ||
+    process.env.STAGING === 'true' ||
+    process.env.VERCEL_ENV === 'preview' ||
+    process.env.VERCEL_ENV === 'production';
 
-  if (cronSecret) {
-    if (!authHeader || authHeader !== `Bearer ${cronSecret}`) {
-      logger.warn({ ip: request.headers.get('x-forwarded-for') }, 'Unauthorized cron sync request');
-      return NextResponse.json({ error: 'Unauthorized: invalid cron secret' }, { status: 401 });
+  if (!cronSecret) {
+    if (isProdOrStaging) {
+      logger.error('CRON_SECRET is not configured in production or staging environment');
+      return NextResponse.json(
+        { error: 'CRON_SECRET environment variable is required in production and staging environments' },
+        { status: 500 }
+      );
     }
-  } else if (process.env.NODE_ENV === 'production') {
-    logger.error('CRON_SECRET is not configured in production environment');
+    logger.warn('CRON_SECRET is not configured; rejecting request');
     return NextResponse.json(
-      { error: 'CRON_SECRET environment variable is required in production' },
+      { error: 'CRON_SECRET environment variable is not configured' },
       { status: 500 }
     );
+  }
+
+  const authHeader = request.headers.get('authorization');
+
+  if (!isCronAuthorized(authHeader, cronSecret)) {
+    logger.warn(
+      { ip: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') },
+      'Unauthorized cron sync request: invalid or missing Bearer token'
+    );
+    return NextResponse.json({ error: 'Unauthorized: invalid or missing cron secret' }, { status: 401 });
   }
 
   try {
