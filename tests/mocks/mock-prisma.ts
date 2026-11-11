@@ -323,8 +323,14 @@ export function createMockPrisma() {
       }),
       create: vi.fn(async ({ data }: any) => {
         const compositeKey = `${data.botType}:${data.updateId.toString()}`;
+        if (telegramProcessedUpdates.has(compositeKey)) {
+          const p2002: any = new Error('Unique constraint failed on the fields: (`botType`,`updateId`)');
+          p2002.code = 'P2002';
+          p2002.name = 'PrismaClientKnownRequestError';
+          throw p2002;
+        }
         const record = {
-          id: `tgup-${Date.now()}`,
+          id: `tgup-${Date.now()}-${Math.random()}`,
           botType: data.botType,
           updateId: BigInt(data.updateId.toString()),
           status: data.status,
@@ -354,6 +360,7 @@ export function createMockPrisma() {
           if (where.id && v.id !== where.id) match = false;
           if (where.botType && v.botType !== where.botType) match = false;
           if (where.updateId && v.updateId !== BigInt(where.updateId.toString())) match = false;
+          if (where.updatedAt && v.updatedAt?.getTime() !== where.updatedAt?.getTime()) match = false;
           if (match) {
             Object.assign(v, data);
             count++;

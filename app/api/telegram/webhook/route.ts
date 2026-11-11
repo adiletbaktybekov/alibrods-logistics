@@ -81,6 +81,17 @@ export async function POST(req: NextRequest) {
     if (updateId !== null && updateId !== undefined) {
       const claim = await TelegramDeduplicationService.claimUpdate(botType, updateId);
       if (!claim.canProcess) {
+        if (claim.retryable || claim.reason === 'INFRASTRUCTURE_ERROR') {
+          logger.warn(
+            { botType, updateId: updateId.toString(), reason: claim.reason },
+            'Database infrastructure error during claimUpdate. Returning HTTP 503 for Telegram retry.'
+          );
+          return NextResponse.json(
+            { error: 'Service temporarily unavailable' },
+            { status: 503 }
+          );
+        }
+
         logger.info(
           { botType, updateId: updateId.toString(), reason: claim.reason },
           'Telegram update already processed or in-flight on another instance. Skipping duplicate.'

@@ -4,12 +4,26 @@ import { logger } from '@/lib/logger';
 
 export interface UpdateClaimResult {
   canProcess: boolean;
-  reason?: 'ALREADY_PROCESSED' | 'IN_FLIGHT_OTHER_INSTANCE' | 'MAX_ATTEMPTS_EXCEEDED' | 'PREVIOUSLY_FAILED' | 'CLAIMED' | 'RETRY_STALE_LOCK' | 'FALLBACK';
+  retryable?: boolean;
+  reason?:
+    | 'ALREADY_PROCESSED'
+    | 'IN_FLIGHT_OTHER_INSTANCE'
+    | 'MAX_ATTEMPTS_EXCEEDED'
+    | 'PREVIOUSLY_FAILED'
+    | 'CLAIMED'
+    | 'RETRY_STALE_LOCK'
+    | 'INFRASTRUCTURE_ERROR'
+    | 'FALLBACK';
 }
 
 const IN_FLIGHT_LOCK_TIMEOUT_MS = 30 * 1000; // 30 seconds
 const MAX_PROCESSING_ATTEMPTS = 3;
 const RETENTION_DAYS = 7;
+
+function isUniqueConstraintViolation(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  return (err as { code?: string }).code === 'P2002';
+}
 
 export class TelegramDeduplicationService {
   /**
@@ -51,7 +65,7 @@ export class TelegramDeduplicationService {
             { botType, updateId: updateId.toString() },
             'Telegram update already processed. Skipping duplicate delivery.'
           );
-          return { canProcess: false, reason: 'ALREADY_PROCESSED' };
+          return { canProcess: false, retryable: false, reason: 'ALREADY_PROCESSED' };
         }
 
         // 2. Currently being processed by another instance
@@ -63,7 +77,7 @@ export class TelegramDeduplicationService {
               { botType, updateId: updateId.toString(), lockAgeMs },
               'Telegram update is actively in-flight on another instance. Skipping concurrent attempt.'
             );
-            return { canProcess: false, reason: 'IN_FLIGHT_OTHER_INSTANCE' };
+            return { canProcess: false, retryable: false, reason: 'IN_FLIGHT_OTHER_INSTANCE' };
           }
 
           // Lock is stale (> 30s) — previous instance likely died or timed out
@@ -80,7 +94,7 @@ export class TelegramDeduplicationService {
                 updatedAt: now,
               },
             });
-            return { canProcess: false, reason: 'MAX_ATTEMPTS_EXCEEDED' };
+            return { canProcess: false, retryable: false, reason: 'MAX_ATTEMPTS_EXCEEDED' };
           }
 
           // Safe atomic CAS recovery: claim stale lock and increment attempts
@@ -97,7 +111,7 @@ export class TelegramDeduplicationService {
 
           if (claimResult.count === 0) {
             // Another instance won the race to claim this stale lock
-            return { canProcess: false, reason: 'IN_FLIGHT_OTHER_INSTANCE' };
+            return { canProcess: false, retryable: false, reason: 'IN_FLIGHT_OTHER_INSTANCE' };
           }
 
           return { canProcess: true, reason: 'RETRY_STALE_LOCK' };
@@ -106,7 +120,7 @@ export class TelegramDeduplicationService {
         // 3. Previously failed
         if (existing.status === TelegramUpdateStatus.FAILED) {
           if (existing.attempts >= MAX_PROCESSING_ATTEMPTS) {
-            return { canProcess: false, reason: 'PREVIOUSLY_FAILED' };
+            return { canProcess: false, retryable: false, reason: 'PREVIOUSLY_FAILED' };
           }
 
           const claimResult = await prisma.telegramProcessedUpdate.updateMany({
@@ -122,7 +136,7 @@ export class TelegramDeduplicationService {
           });
 
           if (claimResult.count === 0) {
-            return { canProcess: false, reason: 'IN_FLIGHT_OTHER_INSTANCE' };
+            return { canProcess: false, retryable: false, reason: 'IN_FLIGHT_OTHER_INSTANCE' };
           }
 
           return { canProcess: true, reason: 'RETRY_STALE_LOCK' };
@@ -142,28 +156,47 @@ export class TelegramDeduplicationService {
 
       return { canProcess: true, reason: 'CLAIMED' };
     } catch (err: unknown) {
-      // Handle parallel insert race condition: recheck status
-      try {
-        const recheck = await prisma.telegramProcessedUpdate.findUnique({
-          where: {
-            botType_updateId: {
-              botType,
-              updateId,
+      // 5. Handle parallel insert race condition (P2002 Unique Constraint Violation)
+      if (isUniqueConstraintViolation(err)) {
+        try {
+          const recheck = await prisma.telegramProcessedUpdate.findUnique({
+            where: {
+              botType_updateId: {
+                botType,
+                updateId,
+              },
             },
-          },
-        });
-        if (recheck && recheck.status === TelegramUpdateStatus.PROCESSED) {
-          return { canProcess: false, reason: 'ALREADY_PROCESSED' };
+          });
+          if (recheck && recheck.status === TelegramUpdateStatus.PROCESSED) {
+            return { canProcess: false, retryable: false, reason: 'ALREADY_PROCESSED' };
+          }
+        } catch {
+          // If recheck query fails due to DB error, P2002 still guarantees another instance inserted it
         }
-      } catch {
-        // Fall through
+
+        logger.info(
+          { botType, updateId: updateId.toString() },
+          'Parallel insert race condition detected (P2002). Update claimed by concurrent instance.'
+        );
+        return { canProcess: false, retryable: false, reason: 'IN_FLIGHT_OTHER_INSTANCE' };
       }
 
-      logger.warn(
-        { err, botType, updateId: updateId.toString() },
-        'Race condition or error during Telegram update claim. Skipping duplicate.'
+      // 6. Infrastructure or Database error (connection failure, pool timeout, offline DB)
+      logger.error(
+        {
+          botType,
+          updateId: updateId.toString(),
+          errType: err instanceof Error ? err.name : typeof err,
+          errMsg: err instanceof Error ? err.message : String(err),
+        },
+        'Database infrastructure error during Telegram update claim. Failing with retryable=true for HTTP 503 retry.'
       );
-      return { canProcess: false, reason: 'IN_FLIGHT_OTHER_INSTANCE' };
+
+      return {
+        canProcess: false,
+        retryable: true,
+        reason: 'INFRASTRUCTURE_ERROR',
+      };
     }
   }
 
