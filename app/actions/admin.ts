@@ -484,4 +484,178 @@ export async function changePasswordAction(prevState: unknown, formData: FormDat
   };
 }
 
+export interface ManagerTelegramConnectionInfo {
+  telegramAccount: {
+    id: string;
+    telegramId: string;
+    username: string | null;
+    firstName: string | null;
+    lastName: string | null;
+    authDate: string | null;
+    createdAt: string;
+  } | null;
+  activePairingCode: {
+    code: string;
+    expiresAt: string;
+    deepLink: string;
+  } | null;
+  botUsername: string;
+}
+
+export async function getManagerTelegramInfoAction(): Promise<{
+  success: boolean;
+  data?: ManagerTelegramConnectionInfo;
+  error?: string;
+}> {
+  let staff;
+  try {
+    staff = await requireStaffUser();
+  } catch (err: unknown) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Требуется авторизация сотрудника',
+    };
+  }
+
+  const botUsername = process.env.TELEGRAM_MANAGER_BOT_USERNAME || 'AliBrosManagerBot';
+
+  try {
+    const [telegramAccount, activeCode] = await Promise.all([
+      prisma.telegramAccount.findUnique({
+        where: { userId: staff.id },
+      }),
+      prisma.telegramPairingCode.findFirst({
+        where: {
+          userId: staff.id,
+          usedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+
+    const serializedAccount = telegramAccount
+      ? {
+          id: telegramAccount.id,
+          telegramId: telegramAccount.telegramId.toString(),
+          username: telegramAccount.username,
+          firstName: telegramAccount.firstName,
+          lastName: telegramAccount.lastName,
+          authDate: telegramAccount.authDate ? new Date(telegramAccount.authDate).toISOString() : null,
+          createdAt: telegramAccount.createdAt ? new Date(telegramAccount.createdAt).toISOString() : new Date().toISOString(),
+        }
+      : null;
+
+    const serializedCode = activeCode
+      ? {
+          code: activeCode.code,
+          expiresAt: activeCode.expiresAt.toISOString(),
+          deepLink: `https://t.me/${botUsername}?start=${activeCode.code}`,
+        }
+      : null;
+
+    return {
+      success: true,
+      data: {
+        telegramAccount: serializedAccount,
+        activePairingCode: serializedCode,
+        botUsername,
+      },
+    };
+  } catch (err: unknown) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Ошибка загрузки статуса Telegram',
+    };
+  }
+}
+
+export async function generateManagerPairingCodeAction(): Promise<{
+  success: boolean;
+  code?: string;
+  expiresAt?: string;
+  deepLink?: string;
+  error?: string;
+}> {
+  let staff;
+  try {
+    staff = await requireStaffUser();
+  } catch (err: unknown) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Требуется авторизация сотрудника',
+    };
+  }
+
+  try {
+    let manager = await prisma.managerProfile.findUnique({
+      where: { userId: staff.id },
+    });
+
+    if (!manager) {
+      manager = await prisma.managerProfile.create({
+        data: {
+          userId: staff.id,
+          fullName: staff.email || staff.phone || 'Сотрудник AliBros',
+          department: staff.role,
+        },
+      });
+    }
+
+    const { ManagerPairingService } = await import('@/modules/telegram/pairing.service');
+    const result = await ManagerPairingService.generatePairingCode(manager.id, staff.id);
+    revalidatePath('/admin/profile');
+
+    return {
+      success: true,
+      code: result.code,
+      expiresAt: result.expiresAt.toISOString(),
+      deepLink: result.deepLink,
+    };
+  } catch (err: unknown) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Не удалось сформировать код привязки',
+    };
+  }
+}
+
+export async function unlinkManagerTelegramAction(): Promise<{
+  success: boolean;
+  error?: string;
+}> {
+  let staff;
+  try {
+    staff = await requireStaffUser();
+  } catch (err: unknown) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Требуется авторизация сотрудника',
+    };
+  }
+
+  try {
+    const manager = await prisma.managerProfile.findUnique({
+      where: { userId: staff.id },
+    });
+
+    const { ManagerPairingService } = await import('@/modules/telegram/pairing.service');
+    if (manager) {
+      await ManagerPairingService.unlinkManager(manager.id, staff.id);
+    } else {
+      await prisma.telegramAccount.deleteMany({
+        where: { userId: staff.id },
+      });
+    }
+
+    revalidatePath('/admin/profile');
+    return { success: true };
+  } catch (err: unknown) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Не удалось отвязать Telegram',
+    };
+  }
+}
+
 

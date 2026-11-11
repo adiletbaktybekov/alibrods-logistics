@@ -209,7 +209,7 @@ export class DriverPairingService {
         driverProfileId,
         driverFullName,
       };
-    });
+    }, { timeout: 15000, maxWait: 10000 });
   }
 
   /**
@@ -454,7 +454,7 @@ export class ClientPairingService {
         clientProfileId,
         companyName,
       };
-    });
+    }, { timeout: 15000, maxWait: 10000 });
   }
 
   /**
@@ -486,6 +486,37 @@ export class ClientPairingService {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Unlinks Telegram account from a client.
+   */
+  public static async unlinkClient(clientProfileId: string, performedByUserId: string) {
+    const client = await prisma.clientProfile.findUnique({
+      where: { id: clientProfileId },
+      include: { user: true },
+    });
+
+    if (!client) {
+      throw new Error('Клиент не найден в системе');
+    }
+
+    await prisma.telegramAccount.deleteMany({
+      where: { userId: client.userId },
+    });
+
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(performedByUserId);
+
+    await AuditService.log({
+      userId: isUuid ? performedByUserId : undefined,
+      action: AuditAction.UPDATE,
+      resource: 'ClientProfile',
+      resourceId: clientProfileId,
+      metadata: { event: 'TELEGRAM_ACCOUNT_UNLINKED', performedByUserId },
+    });
+
+    logger.info({ clientProfileId, performedByUserId }, 'Unlinked client Telegram account');
+    return { success: true };
   }
 }
 
@@ -689,7 +720,7 @@ export class ManagerPairingService {
         managerProfileId,
         fullName,
       };
-    });
+    }, { timeout: 15000, maxWait: 10000 });
   }
 
   /**
@@ -722,6 +753,37 @@ export class ManagerPairingService {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Unlinks Telegram account from a manager or administrator.
+   */
+  public static async unlinkManager(managerProfileId: string, performedByUserId: string) {
+    const manager = await prisma.managerProfile.findUnique({
+      where: { id: managerProfileId },
+      include: { user: true },
+    });
+
+    if (!manager) {
+      throw new Error('Менеджер не найден в системе');
+    }
+
+    await prisma.telegramAccount.deleteMany({
+      where: { userId: manager.userId },
+    });
+
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(performedByUserId);
+
+    await AuditService.log({
+      userId: isUuid ? performedByUserId : undefined,
+      action: AuditAction.UPDATE,
+      resource: 'ManagerProfile',
+      resourceId: managerProfileId,
+      metadata: { event: 'TELEGRAM_ACCOUNT_UNLINKED', performedByUserId },
+    });
+
+    logger.info({ managerProfileId, performedByUserId }, 'Unlinked manager Telegram account');
+    return { success: true };
   }
 }
 

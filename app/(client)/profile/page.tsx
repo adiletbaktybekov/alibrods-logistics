@@ -1,19 +1,30 @@
 import * as React from 'react';
 import { getCurrentClientProfile } from '@/app/actions/auth';
+import { getClientTelegramInfoAction } from '@/app/actions/profile';
 import { WarehousesService } from '@/modules/warehouses/warehouses.service';
 import { ProfileForm } from './profile-form';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { ClientTelegramCard } from './telegram-card';
+import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 
 export const dynamic = 'force-dynamic';
 
 export default async function ProfilePage() {
-  const profile = await getCurrentClientProfile();
-  const warehouses = await WarehousesService.list();
+  const [profile, warehouses, telegramRes] = await Promise.all([
+    getCurrentClientProfile(),
+    WarehousesService.list(),
+    getClientTelegramInfoAction(),
+  ]);
 
   if (!profile || !profile.client) {
     return <div>Профиль не найден</div>;
   }
+
+  const telegramInfo = telegramRes.data || {
+    telegramAccount: null,
+    activePairingCode: null,
+    botUsername: process.env.TELEGRAM_CLIENT_BOT_USERNAME || 'AliBrosClientBot',
+  };
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
@@ -28,7 +39,7 @@ export default async function ProfilePage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Left Column: Profile Summary Cards */}
+        {/* Left Column: Profile Summary Cards & Telegram */}
         <div className="md:col-span-1 space-y-4">
           <Card className="border-slate-200 shadow-sm p-4 text-center">
             <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-100 text-brand-700 font-bold text-xl mb-3">
@@ -41,21 +52,7 @@ export default async function ProfilePage() {
             </div>
           </Card>
 
-          <Card className="border-slate-200 shadow-sm p-4 space-y-3 text-xs">
-            <CardHeader className="p-0 pb-2 border-b border-slate-100">
-              <CardTitle className="text-xs uppercase font-semibold text-slate-500">
-                Telegram-уведомления
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-0 text-slate-600 leading-relaxed">
-              Привязка Telegram-бота позволит мгновенно получать статусы приёмки грузов и фотоотчёты.
-              <div className="mt-3">
-                <Badge variant="outline" className="w-full justify-center">
-                  Подключение в Phase 3
-                </Badge>
-              </div>
-            </CardContent>
-          </Card>
+          <ClientTelegramCard initialInfo={telegramInfo} />
         </div>
 
         {/* Right Column: Editable Profile Form */}

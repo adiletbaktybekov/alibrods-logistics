@@ -68,12 +68,20 @@ export function createMockPrisma() {
     },
     managerProfile: {
       findUnique: vi.fn(async ({ where }: any) => {
-        const userId = 'manager-user-uuid-1';
+        const userId = where?.userId || 'manager-user-uuid-1';
         return {
-          id: where.id,
+          id: where.id || `mgr-${userId}`,
           userId,
           fullName: 'Менеджер Анна',
           user: { id: userId, role: UserRole.MANAGER, isActive: true },
+        };
+      }),
+      create: vi.fn(async ({ data }: any) => {
+        return {
+          id: `mgr-${data.userId}`,
+          userId: data.userId,
+          fullName: data.fullName,
+          department: data.department,
         };
       }),
     },
@@ -143,6 +151,16 @@ export function createMockPrisma() {
         pairingCodes.clear();
         return { count: 0 };
       }),
+      findFirst: vi.fn(async ({ where }: any) => {
+        for (const record of pairingCodes.values()) {
+          let match = true;
+          if (where?.userId && record.userId !== where.userId) match = false;
+          if (where?.usedAt === null && record.usedAt !== null) match = false;
+          if (where?.expiresAt?.gt && !(record.expiresAt > where.expiresAt.gt)) match = false;
+          if (match) return record;
+        }
+        return null;
+      }),
     },
     telegramAccount: {
       findUnique: vi.fn(async ({ where }: any) => {
@@ -166,9 +184,21 @@ export function createMockPrisma() {
           firstName: create?.firstName || update?.firstName,
           lastName: create?.lastName || update?.lastName,
           languageCode: create?.languageCode || update?.languageCode,
+          createdAt: existing?.createdAt || new Date(),
+          authDate: existing?.authDate || new Date(),
         };
         telegramAccounts.set(tid, record);
         return record;
+      }),
+      deleteMany: vi.fn(async ({ where }: any) => {
+        let count = 0;
+        for (const [tid, acc] of Array.from(telegramAccounts.entries())) {
+          if (!where?.userId || acc.userId === where.userId) {
+            telegramAccounts.delete(tid);
+            count++;
+          }
+        }
+        return { count };
       }),
     },
     $queryRaw: vi.fn(async (query: any, ...values: any[]) => {

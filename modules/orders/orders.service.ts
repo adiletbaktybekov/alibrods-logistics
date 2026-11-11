@@ -628,7 +628,7 @@ export class OrdersService {
         driverFullName: driver.fullName,
         previousDriverId: activeAssignment?.driverId,
       };
-    });
+    }, { timeout: 15000, maxWait: 10000 });
 
     await AuditService.log({
       userId: user.id,

@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { redirect } from 'next/navigation';
-import { requireStaffUser, getStaffProfileAction } from '@/app/actions/admin';
+import { requireStaffUser, getStaffProfileAction, getManagerTelegramInfoAction } from '@/app/actions/admin';
 import { logoutAction } from '@/app/actions/auth';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { UserRole } from '@prisma/client';
 import { formatDateTime } from '@/lib/utils';
 import { PasswordChangeForm } from './password-form';
+import { ManagerTelegramCard } from './telegram-card';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,7 +19,16 @@ export default async function AdminProfilePage() {
   } catch {
     redirect('/login');
   }
-  const dbUser = await getStaffProfileAction();
+  const [dbUser, telegramRes] = await Promise.all([
+    getStaffProfileAction(),
+    getManagerTelegramInfoAction(),
+  ]);
+
+  const telegramInfo = telegramRes.data || {
+    telegramAccount: null,
+    activePairingCode: null,
+    botUsername: process.env.TELEGRAM_MANAGER_BOT_USERNAME || 'AliBrosManagerBot',
+  };
 
   const roleNames: Record<UserRole, string> = {
     SUPER_ADMIN: 'Главный администратор (Superadmin)',
@@ -137,6 +147,9 @@ export default async function AdminProfilePage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Telegram Integration Card */}
+      <ManagerTelegramCard initialInfo={telegramInfo} />
 
       {/* Password Change Form */}
       <PasswordChangeForm />
