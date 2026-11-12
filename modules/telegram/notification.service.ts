@@ -386,7 +386,12 @@ export class TelegramNotificationService {
     }
 
     // 2. Check feature toggle (always enabled on Staging to ensure group dispatch to AliBros Staging Test)
-    const isStagingEnv = process.env.NODE_ENV !== 'test' && process.env.DATABASE_URL?.includes('ep-restless-wave-b9k0ye9q');
+    const isStagingEnv =
+      process.env.NODE_ENV !== 'test' &&
+      (Boolean(process.env.DATABASE_URL?.includes('ep-restless-wave-b9k0ye9q')) ||
+        process.env.VERCEL_ENV === 'preview' ||
+        process.env.STAGING === 'true');
+
     if (process.env.TELEGRAM_ENABLE_GROUP_NOTIFICATIONS === 'false' && !isStagingEnv) {
       logger.info(
         { event: 'TELEGRAM_GROUP_NOTIFICATION_SKIPPED', reason: 'GROUP_NOTIFICATIONS_DISABLED', eventType, orderId: payload.orderId },
@@ -395,13 +400,24 @@ export class TelegramNotificationService {
       return { sent: false, skippedReason: 'GROUP_NOTIFICATIONS_DISABLED' };
     }
 
-    // 3. Check group chat ID configuration (with safe staging fallback for runtime)
-    let groupChatId =
-      process.env.TELEGRAM_MANAGER_GROUP_CHAT_ID ||
-      process.env.TELEGRAM_GROUP_CHAT_ID;
+    // 3. Determine target group chat ID & topic ID based on environment
+    let groupChatId: string | undefined;
+    let groupTopicId: string | undefined;
 
-    if (!groupChatId && process.env.NODE_ENV !== 'test' && process.env.DATABASE_URL?.includes('ep-restless-wave-b9k0ye9q')) {
+    if (isStagingEnv) {
+      // Staging / Preview MUST ALWAYS route to AliBros Staging Test (-1004425588766) without topic
       groupChatId = '-1004425588766';
+      groupTopicId = undefined;
+    } else {
+      // Production routes to AliBros Биримдик (-1003893397086), topic 8 («Отгрузка»)
+      groupChatId =
+        process.env.TELEGRAM_MANAGER_GROUP_CHAT_ID ||
+        process.env.TELEGRAM_GROUP_CHAT_ID ||
+        '-1003893397086';
+      groupTopicId =
+        process.env.TELEGRAM_MANAGER_GROUP_TOPIC_ID ||
+        process.env.TELEGRAM_GROUP_TOPIC_ID ||
+        '8';
     }
 
     if (!groupChatId) {
@@ -445,14 +461,10 @@ export class TelegramNotificationService {
       }
     }
 
-    // 4. Render message
+    // 5. Render message
     const text = this.buildGroupMessage(eventType, payload);
 
-    const groupTopicId =
-      process.env.TELEGRAM_MANAGER_GROUP_TOPIC_ID ||
-      process.env.TELEGRAM_GROUP_TOPIC_ID;
-
-    // 5. Send via Manager Bot Client with retry
+    // 6. Send via Manager Bot Client with retry
     try {
       const managerBot = getManagerTelegramBotClient();
       const success = await managerBot.sendMessageWithRetry({
