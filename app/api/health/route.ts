@@ -24,6 +24,7 @@ export async function GET() {
       status: 'healthy',
       timestamp: new Date().toISOString(),
       uptimeSeconds: Math.floor(process.uptime()),
+      gitCommit: process.env.VERCEL_GIT_COMMIT_SHA || 'local',
       environment: process.env.NODE_ENV || 'development',
       services: {
         api: 'online',
