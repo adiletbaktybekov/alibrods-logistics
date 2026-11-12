@@ -29,6 +29,8 @@ export class TelegramBotClient {
     return this.botToken;
   }
 
+  public lastSentMessageId?: number;
+
   public async sendMessage(options: SendTelegramMessageOptions): Promise<boolean> {
     if (!this.botToken) {
       logger.warn({
@@ -72,10 +74,11 @@ export class TelegramBotClient {
         return false;
       }
 
+      this.lastSentMessageId = data.result?.message_id;
       logger.info({
         event: 'TELEGRAM_API_SUCCESS',
         chatId: options.chatId,
-        messageId: data.result?.message_id,
+        messageId: this.lastSentMessageId,
       });
 
       return true;

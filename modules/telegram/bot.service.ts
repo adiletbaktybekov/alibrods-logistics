@@ -610,34 +610,9 @@ export class TelegramBotService {
     if (txResult.outcome === 'ALREADY_PROCESSED') {
       const statusLabel = STATUS_LABELS[txResult.currentStatus!] || txResult.currentStatus;
 
-      // Safe retry for CONFIRMED orders if group notification was not previously dispatched
-      let retryDispatched = false;
-      if (action === 'accept' && txResult.currentStatus === OrderStatus.CONFIRMED && txResult.order) {
-        const processedOrder = txResult.order;
-        try {
-          const groupRes = await TelegramNotificationService.notifyGroupEvent('ORDER_CONFIRMED', {
-            orderId: processedOrder.id,
-            orderNumber: processedOrder.orderNumber,
-            marketplace: processedOrder.marketplace,
-            warehouseName: processedOrder.warehouse?.name || 'Склад',
-            scheduledPickupAt: processedOrder.scheduledPickupAt,
-            totalBoxesCount: processedOrder.totalBoxesCount,
-            totalPalletsCount: processedOrder.totalPalletsCount,
-            managerComment: `Подтверждено: ${managerName}`,
-          });
-          if (groupRes.sent) {
-            retryDispatched = true;
-          }
-        } catch (e) {
-          logger.error({ err: e, orderId }, 'Retry dispatch of group ORDER_CONFIRMED failed');
-        }
-      }
-
       await managerBot.answerCallbackQuery(
         cb.id,
-        retryDispatched
-          ? '✅ Заявка подтверждена и опубликована в группе отгрузки!'
-          : `ℹ️ Заявка уже была обработана ранее (текущий статус: ${statusLabel}).`,
+        `ℹ️ Заявка уже была обработана ранее (текущий статус: ${statusLabel}).`,
         true
       );
 
@@ -650,7 +625,7 @@ export class TelegramBotService {
         await managerBot.editMessageText({
           chatId: cb.message.chat.id,
           messageId: cb.message.message_id,
-          text: `${cleanedText}\n\n<i>ℹ️ Заявка уже обработана (статус: ${statusLabel}).</i>`,
+          text: `${cleanedText}\n\n<i>ℹ️ Заявка уже обработана ранее (текущий статус: ${statusLabel}).</i>`,
           parseMode: 'HTML',
         }).catch(() => {});
       }
@@ -704,16 +679,39 @@ export class TelegramBotService {
       await managerBot.answerCallbackQuery(cb.id, '✅ Заявка подтверждена и опубликована в группе!');
 
       // 6b. Dispatch ORDER_CONFIRMED to the shipping group
-      await TelegramNotificationService.notifyGroupEvent('ORDER_CONFIRMED', {
-        orderId: processedOrder.id,
-        orderNumber: processedOrder.orderNumber,
-        marketplace: processedOrder.marketplace,
-        warehouseName: processedOrder.warehouse.name,
-        scheduledPickupAt: processedOrder.scheduledPickupAt,
-        totalBoxesCount: processedOrder.totalBoxesCount,
-        totalPalletsCount: processedOrder.totalPalletsCount,
-        managerComment: `Подтверждено: ${managerName}`,
-      }).catch((e) => logger.error({ err: e }, 'Failed to dispatch group ORDER_CONFIRMED'));
+      try {
+        const groupRes = await TelegramNotificationService.notifyGroupEvent('ORDER_CONFIRMED', {
+          orderId: processedOrder.id,
+          orderNumber: processedOrder.orderNumber,
+          marketplace: processedOrder.marketplace,
+          warehouseName: processedOrder.warehouse?.name || 'Склад',
+          scheduledPickupAt: processedOrder.scheduledPickupAt,
+          totalBoxesCount: processedOrder.totalBoxesCount,
+          totalPalletsCount: processedOrder.totalPalletsCount,
+          managerComment: `Подтверждено: ${managerName}`,
+        });
+
+        await AuditService.log({
+          userId: managerUser.id,
+          action: AuditAction.UPDATE,
+          resource: 'OrderNotification',
+          resourceId: processedOrder.id,
+          oldValue: null,
+          newValue: {
+            eventType: 'ORDER_CONFIRMED',
+            sent: groupRes.sent,
+            messageId: groupRes.messageId ?? null,
+            skippedReason: groupRes.skippedReason ?? null,
+            error: groupRes.error ?? null,
+          },
+          metadata: {
+            source: 'TELEGRAM_MANAGER_BOT',
+            action: 'group_dispatch',
+          },
+        });
+      } catch (e) {
+        logger.error({ err: e }, 'Failed to dispatch group ORDER_CONFIRMED');
+      }
 
       // 6c. Notify Client (In-App)
       if (processedOrder.client?.userId) {

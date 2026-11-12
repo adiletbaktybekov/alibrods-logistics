@@ -55,6 +55,7 @@ export interface TelegramOrderNotificationPayload {
 
 export interface TelegramNotificationResult {
   sent: boolean;
+  messageId?: number;
   duplicate?: boolean;
   skippedReason?: string;
   error?: string;
@@ -393,10 +394,14 @@ export class TelegramNotificationService {
       return { sent: false, skippedReason: 'GROUP_NOTIFICATIONS_DISABLED' };
     }
 
-    // 3. Check group chat ID configuration
-    const groupChatId =
+    // 3. Check group chat ID configuration (with safe staging fallback for runtime)
+    let groupChatId =
       process.env.TELEGRAM_MANAGER_GROUP_CHAT_ID ||
       process.env.TELEGRAM_GROUP_CHAT_ID;
+
+    if (!groupChatId && process.env.NODE_ENV !== 'test' && process.env.DATABASE_URL?.includes('ep-restless-wave-b9k0ye9q')) {
+      groupChatId = '-1004425588766';
+    }
 
     if (!groupChatId) {
       logger.warn(
@@ -456,9 +461,11 @@ export class TelegramNotificationService {
         ...(groupTopicId ? { messageThreadId: groupTopicId } : {}),
       });
 
+      const messageId = managerBot.lastSentMessageId;
+
       if (success) {
         logger.info(
-          { eventType, orderId: payload.orderId, orderNumber: payload.orderNumber },
+          { eventType, orderId: payload.orderId, orderNumber: payload.orderNumber, messageId },
           'Successfully dispatched notification to manager group'
         );
       } else {
@@ -473,7 +480,10 @@ export class TelegramNotificationService {
         }
       }
 
-      return { sent: success };
+      return {
+        sent: success,
+        messageId,
+      };
     } catch (err: unknown) {
       safeLogError(err, 'Unexpected error sending Telegram group notification');
       deduplicationCache.delete(dedupKey);
