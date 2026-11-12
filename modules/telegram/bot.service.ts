@@ -696,13 +696,12 @@ export class TelegramBotService {
           action: AuditAction.UPDATE,
           resource: 'OrderNotification',
           resourceId: processedOrder.id,
-          oldValue: null,
           newValue: {
             eventType: 'ORDER_CONFIRMED',
             sent: groupRes.sent,
-            messageId: groupRes.messageId ?? null,
-            skippedReason: groupRes.skippedReason ?? null,
-            error: groupRes.error ?? null,
+            messageId: groupRes.messageId ?? undefined,
+            skippedReason: groupRes.skippedReason ?? undefined,
+            error: groupRes.error ?? undefined,
           },
           metadata: {
             source: 'TELEGRAM_MANAGER_BOT',
