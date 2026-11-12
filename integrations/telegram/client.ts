@@ -8,6 +8,14 @@ export interface SendTelegramMessageOptions {
   messageThreadId?: number | string;
 }
 
+export interface EditTelegramMessageOptions {
+  chatId: number | string;
+  messageId: number | string;
+  text: string;
+  parseMode?: 'HTML' | 'MarkdownV2' | 'Markdown';
+  replyMarkup?: unknown;
+}
+
 export class TelegramBotClient {
   private readonly botToken: string;
   private readonly baseUrl: string;
@@ -17,11 +25,25 @@ export class TelegramBotClient {
     this.baseUrl = `https://api.telegram.org/bot${this.botToken}`;
   }
 
+  public getBotToken(): string {
+    return this.botToken;
+  }
+
   public async sendMessage(options: SendTelegramMessageOptions): Promise<boolean> {
     if (!this.botToken) {
-      logger.warn('Telegram bot token not configured. Skipping sendMessage.');
+      logger.warn({
+        event: 'TELEGRAM_API_ERROR',
+        description: 'Telegram bot token not configured. Skipping sendMessage.',
+        chatId: options.chatId,
+      });
       return false;
     }
+
+    logger.info({
+      event: 'TELEGRAM_API_REQUEST_STARTED',
+      chatId: options.chatId,
+      hasThreadId: options.messageThreadId !== undefined && options.messageThreadId !== null,
+    });
 
     try {
       const response = await fetch(`${this.baseUrl}/sendMessage`, {
@@ -40,13 +62,30 @@ export class TelegramBotClient {
 
       const data = await response.json();
       if (!response.ok || !data.ok) {
-        logger.error({ data, options }, 'Telegram API error returned on sendMessage');
+        logger.error({
+          event: 'TELEGRAM_API_ERROR',
+          httpStatus: response.status,
+          errorCode: data?.error_code,
+          description: data?.description || 'Telegram API returned non-OK response',
+          chatId: options.chatId,
+        });
         return false;
       }
 
+      logger.info({
+        event: 'TELEGRAM_API_SUCCESS',
+        chatId: options.chatId,
+        messageId: data.result?.message_id,
+      });
+
       return true;
     } catch (err) {
-      logger.error({ err, options }, 'Network error while contacting Telegram API');
+      logger.error({
+        event: 'TELEGRAM_API_ERROR',
+        httpStatus: 0,
+        description: err instanceof Error ? err.message : 'Network error while contacting Telegram API',
+        chatId: options.chatId,
+      });
       return false;
     }
   }
@@ -86,6 +125,55 @@ export class TelegramBotClient {
       });
       return response.ok;
     } catch {
+      return false;
+    }
+  }
+
+  public async editMessageText(options: EditTelegramMessageOptions): Promise<boolean> {
+    if (!this.botToken) {
+      logger.warn({
+        event: 'TELEGRAM_API_ERROR',
+        description: 'Telegram bot token not configured. Skipping editMessageText.',
+        chatId: options.chatId,
+        messageId: options.messageId,
+      });
+      return false;
+    }
+
+    try {
+      const response = await fetch(`${this.baseUrl}/editMessageText`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: options.chatId,
+          message_id: Number(options.messageId),
+          text: options.text,
+          parse_mode: options.parseMode || 'HTML',
+          reply_markup: options.replyMarkup,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        logger.error({
+          event: 'TELEGRAM_API_ERROR',
+          httpStatus: response.status,
+          errorCode: data?.error_code,
+          description: data?.description || 'Telegram API returned non-OK response for editMessageText',
+          chatId: options.chatId,
+          messageId: options.messageId,
+        });
+        return false;
+      }
+      return true;
+    } catch (err) {
+      logger.error({
+        event: 'TELEGRAM_API_ERROR',
+        httpStatus: 0,
+        description: err instanceof Error ? err.message : 'Network error while contacting Telegram API for editMessageText',
+        chatId: options.chatId,
+        messageId: options.messageId,
+      });
       return false;
     }
   }
@@ -243,27 +331,27 @@ let clientBotInstance: TelegramBotClient | null = null;
 let managerBotInstance: TelegramBotClient | null = null;
 
 export function getDriverTelegramBotClient(): TelegramBotClient {
-  if (!driverBotInstance) {
-    const token =
-      process.env.TELEGRAM_DRIVER_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '';
+  const token =
+    process.env.TELEGRAM_DRIVER_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '';
+  if (!driverBotInstance || driverBotInstance.getBotToken() !== token) {
     driverBotInstance = new TelegramBotClient(token);
   }
   return driverBotInstance;
 }
 
 export function getClientTelegramBotClient(): TelegramBotClient {
-  if (!clientBotInstance) {
-    const token =
-      process.env.TELEGRAM_CLIENT_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '';
+  const token =
+    process.env.TELEGRAM_CLIENT_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '';
+  if (!clientBotInstance || clientBotInstance.getBotToken() !== token) {
     clientBotInstance = new TelegramBotClient(token);
   }
   return clientBotInstance;
 }
 
 export function getManagerTelegramBotClient(): TelegramBotClient {
-  if (!managerBotInstance) {
-    const token =
-      process.env.TELEGRAM_MANAGER_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '';
+  const token =
+    process.env.TELEGRAM_MANAGER_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '';
+  if (!managerBotInstance || managerBotInstance.getBotToken() !== token) {
     managerBotInstance = new TelegramBotClient(token);
   }
   return managerBotInstance;

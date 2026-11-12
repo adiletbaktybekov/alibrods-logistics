@@ -31,8 +31,8 @@ export function OrderForm({ warehouses }: OrderFormProps) {
   const minDateString = tomorrow.toISOString().split('T')[0];
 
   const [deliveryDate, setDeliveryDate] = React.useState<string>(minDateString);
-  const [pallets, setPallets] = React.useState<number>(0);
-  const [boxes, setBoxes] = React.useState<number>(1);
+  const [palletsStr, setPalletsStr] = React.useState<string>('0');
+  const [boxesStr, setBoxesStr] = React.useState<string>('1');
   const [idempotencyKey] = React.useState<string>(() => {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
       return crypto.randomUUID();
@@ -40,30 +40,19 @@ export function OrderForm({ warehouses }: OrderFormProps) {
     return `ik-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
   });
 
-  // Filter warehouses based on delivery date schedule
-  const availableWarehouses = React.useMemo(() => {
-    return warehouses.filter((w) => isWarehouseOpenOnDate(w, deliveryDate));
-  }, [warehouses, deliveryDate]);
-
   const [selectedWarehouseId, setSelectedWarehouseId] = React.useState<string>(
-    availableWarehouses[0]?.id || ''
+    warehouses[0]?.id || ''
   );
-
-  // If selected warehouse is not available on new date, switch to first available
-  React.useEffect(() => {
-    if (availableWarehouses.length > 0) {
-      const exists = availableWarehouses.some((w) => w.id === selectedWarehouseId);
-      if (!exists) {
-        setSelectedWarehouseId(availableWarehouses[0].id);
-      }
-    } else {
-      setSelectedWarehouseId('');
-    }
-  }, [availableWarehouses, selectedWarehouseId]);
 
   const selectedWarehouse = warehouses.find((w) => w.id === selectedWarehouseId);
   const dayOfWeekNumber = getDayOfWeekFromDate(deliveryDate);
   const dayOfWeekName = RUSSIAN_DAY_NAMES[dayOfWeekNumber] || '';
+  const isWarehouseOpenToday = selectedWarehouse
+    ? isWarehouseOpenOnDate(selectedWarehouse, deliveryDate)
+    : true;
+
+  const boxes = parseInt(boxesStr || '0', 10);
+  const pallets = parseInt(palletsStr || '0', 10);
 
   return (
     <form action={formAction} className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -101,7 +90,7 @@ export function OrderForm({ warehouses }: OrderFormProps) {
               required
             />
             <p className="mt-1 text-xs text-slate-500">
-              Список доступных складов автоматически обновляется в соответствии с их графиком работы
+              Выберите удобную дату забора/доставки груза
             </p>
           </div>
 
@@ -109,45 +98,39 @@ export function OrderForm({ warehouses }: OrderFormProps) {
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <Label htmlFor="warehouseId" required>
-                2. Склад приёмки (работает в {dayOfWeekName.toLowerCase() || 'выбранный день'})
+                2. Склад приёмки
               </Label>
               <span className="text-xs text-slate-500 font-medium">
-                Доступно: {availableWarehouses.length} из {warehouses.length}
+                Всего складов: {warehouses.length}
               </span>
             </div>
 
-            {availableWarehouses.length > 0 ? (
-              <Select
-                id="warehouseId"
-                name="warehouseId"
-                value={selectedWarehouseId}
-                onChange={(e) => setSelectedWarehouseId(e.target.value)}
-                required
-              >
-                <optgroup label="Wildberries">
-                  {availableWarehouses
-                    .filter((w) => w.marketplace === 'WILDBERRIES')
-                    .map((w) => (
-                      <option key={w.id} value={w.id}>
-                        {w.name} — ({w.scheduleDescription})
-                      </option>
-                    ))}
-                </optgroup>
-                <optgroup label="Ozon">
-                  {availableWarehouses
-                    .filter((w) => w.marketplace === 'OZON')
-                    .map((w) => (
-                      <option key={w.id} value={w.id}>
-                        {w.name} — ({w.scheduleDescription})
-                      </option>
-                    ))}
-                </optgroup>
-              </Select>
-            ) : (
-              <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
-                В выбранный день недели ({dayOfWeekName}) нет доступных складов. Пожалуйста, выберите другую дату.
-              </div>
-            )}
+            <Select
+              id="warehouseId"
+              name="warehouseId"
+              value={selectedWarehouseId}
+              onChange={(e) => setSelectedWarehouseId(e.target.value)}
+              required
+            >
+              <optgroup label="Wildberries">
+                {warehouses
+                  .filter((w) => w.marketplace === 'WILDBERRIES')
+                  .map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name} — ({w.scheduleDescription})
+                    </option>
+                  ))}
+              </optgroup>
+              <optgroup label="Ozon">
+                {warehouses
+                  .filter((w) => w.marketplace === 'OZON')
+                  .map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name} — ({w.scheduleDescription})
+                    </option>
+                  ))}
+              </optgroup>
+            </Select>
 
             {selectedWarehouse && (
               <div className="mt-2.5 p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700 flex items-center justify-between">
@@ -157,6 +140,12 @@ export function OrderForm({ warehouses }: OrderFormProps) {
                 <div className="text-slate-500">
                   <span className="font-semibold text-slate-900">График:</span> {selectedWarehouse.scheduleDescription}
                 </div>
+              </div>
+            )}
+
+            {selectedWarehouse && !isWarehouseOpenToday && (
+              <div className="mt-2.5 p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-900">
+                <span className="font-semibold">ℹ️ Информация о графике:</span> по стандартному графику склад «{selectedWarehouse.name}» работает: {selectedWarehouse.scheduleDescription}. Заявка на <b>{deliveryDate} ({dayOfWeekName})</b> будет принята и согласована логистом индивидуально при подтверждении.
               </div>
             )}
           </div>
@@ -170,11 +159,21 @@ export function OrderForm({ warehouses }: OrderFormProps) {
               <Input
                 id="totalBoxesCount"
                 name="totalBoxesCount"
-                type="number"
-                min="1"
-                max="5000"
-                value={boxes}
-                onChange={(e) => setBoxes(Math.max(1, parseInt(e.target.value || '1', 10)))}
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={boxesStr}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === '' || /^\d+$/.test(val)) {
+                    setBoxesStr(val);
+                  }
+                }}
+                onBlur={() => {
+                  if (!boxesStr || parseInt(boxesStr, 10) < 1) {
+                    setBoxesStr('1');
+                  }
+                }}
                 required
               />
               <p className="mt-1 text-xs text-slate-500">Количество коробов (минимум 1)</p>
@@ -187,11 +186,21 @@ export function OrderForm({ warehouses }: OrderFormProps) {
               <Input
                 id="totalPalletsCount"
                 name="totalPalletsCount"
-                type="number"
-                min="0"
-                max="100"
-                value={pallets}
-                onChange={(e) => setPallets(Math.max(0, parseInt(e.target.value || '0', 10)))}
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={palletsStr}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === '' || /^\d+$/.test(val)) {
+                    setPalletsStr(val);
+                  }
+                }}
+                onBlur={() => {
+                  if (!palletsStr) {
+                    setPalletsStr('0');
+                  }
+                }}
                 required
               />
               <p className="mt-1 text-xs text-slate-500">Укажите 0, если отгрузка россыпью в коробах</p>
@@ -223,7 +232,7 @@ export function OrderForm({ warehouses }: OrderFormProps) {
             variant="primary"
             size="lg"
             isLoading={isPending}
-            disabled={availableWarehouses.length === 0}
+            disabled={!selectedWarehouseId || isPending}
             className="shadow-sm"
           >
             Отправить заявку в работу

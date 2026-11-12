@@ -86,6 +86,20 @@ export class DatabaseRateLimiter {
       return 0;
     }
   }
+
+  /**
+   * Releases/clears a specific key so it can be retried immediately (e.g. on dispatch failure).
+   */
+  public static async release(key: string): Promise<void> {
+    if (!process.env.DATABASE_URL) return;
+    try {
+      await prisma.rateLimitEntry.deleteMany({
+        where: { key },
+      });
+    } catch {
+      // Silent error recovery
+    }
+  }
 }
 
 /**

@@ -12,6 +12,13 @@ import {
   resetTelegramBotClient,
 } from '@/integrations/telegram/client';
 import { TelegramBotService } from '@/modules/telegram/bot.service';
+import { DatabaseRateLimiter } from '@/lib/security/rate-limit';
+
+vi.mock('@/lib/security/rate-limit', () => ({
+  DatabaseRateLimiter: {
+    consume: vi.fn().mockResolvedValue({ allowed: true, remaining: 1, resetAt: Date.now() + 600000 }),
+  },
+}));
 
 describe('Telegram 3-Bot Architecture & Shared Group Notification Service', () => {
   const originalEnv = { ...process.env };
@@ -180,10 +187,12 @@ describe('Telegram 3-Bot Architecture & Shared Group Notification Service', () =
       expect(msg).toContain('15 кор., 2 палл.');
       expect(msg).toContain('Статус:');
 
-      // Security check: must NEVER contain passwords, tokens, or personal phone numbers
+      // Security check: must NEVER contain passwords, tokens, personal phone numbers, or delivery costs
       expect(msg).not.toContain('password');
       expect(msg).not.toContain('token');
       expect(msg).not.toContain('+79');
+      expect(msg).not.toContain('18500');
+      expect(msg).not.toContain('RUB');
     });
 
     it('should include rejection reason in ORDER_REJECTED message', () => {
@@ -192,19 +201,36 @@ describe('Telegram 3-Bot Architecture & Shared Group Notification Service', () =
         rejectionReason: 'Отсутствуют штрихкоды коробов',
       });
 
-      expect(msg).toContain('❌ Заявка #ABL-2026-001 отклонена');
+      expect(msg).toContain('❌ Заявка отклонена: <code>#ABL-2026-001</code>');
       expect(msg).toContain('Причина: <i>Отсутствуют штрихкоды коробов</i>');
     });
 
-    it('should include calculated cost in COST_CALCULATED message', () => {
+    it('should have distinct, unmistakable messages for ACCEPTED_BY_MARKETPLACE and ORDER_COMPLETED', () => {
+      const acceptedMsg = TelegramNotificationService.buildGroupMessage('ACCEPTED_BY_MARKETPLACE', basePayload);
+      const completedMsg = TelegramNotificationService.buildGroupMessage('ORDER_COMPLETED', basePayload);
+
+      expect(acceptedMsg).toContain('📋 Партия успешно принята маркетплейсом: <code>#ABL-2026-001</code>');
+      expect(acceptedMsg).toContain('Партия успешно принята маркетплейсом на воротах склада.');
+
+      expect(completedMsg).toContain('🎉 Заявка полностью завершена: <code>#ABL-2026-001</code>');
+      expect(completedMsg).toContain('Заявка закрыта. Услуга логистики успешно оказана в полном объёме.');
+
+      // Templates must be distinct and unmistakable
+      expect(acceptedMsg).not.toEqual(completedMsg);
+    });
+
+    it('should strictly prohibit cost details in group message templates', () => {
       const msg = TelegramNotificationService.buildGroupMessage('COST_CALCULATED', {
         ...basePayload,
         costAmount: 24500,
         currency: 'RUB',
       });
 
-      expect(msg).toContain('💰 Рассчитана стоимость доставки: #ABL-2026-001');
-      expect(msg).toContain('24 500 RUB');
+      // Must NEVER output cost amounts, currency, or accounting figures to group messages
+      expect(msg).not.toContain('24500');
+      expect(msg).not.toContain('24 500');
+      expect(msg).not.toContain('RUB');
+      expect(msg).not.toContain('Стоимость:');
     });
   });
 
@@ -218,6 +244,20 @@ describe('Telegram 3-Bot Architecture & Shared Group Notification Service', () =
       totalBoxesCount: 5,
       totalPalletsCount: 0,
     };
+
+    it('should strictly block COST_CALCULATED from group notifications (financial privacy rule)', async () => {
+      process.env.TELEGRAM_ENABLE_GROUP_NOTIFICATIONS = 'true';
+      process.env.TELEGRAM_MANAGER_GROUP_CHAT_ID = '-1003893397086';
+
+      const res = await TelegramNotificationService.notifyGroupEvent('COST_CALCULATED', {
+        ...payload,
+        costAmount: 15000,
+        currency: 'RUB',
+      });
+
+      expect(res.sent).toBe(false);
+      expect(res.skippedReason).toBe('COST_NOTIFICATIONS_PROHIBITED_IN_GROUP');
+    });
 
     it('should skip sending when TELEGRAM_ENABLE_GROUP_NOTIFICATIONS is false', async () => {
       process.env.TELEGRAM_ENABLE_GROUP_NOTIFICATIONS = 'false';

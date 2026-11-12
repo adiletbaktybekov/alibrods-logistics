@@ -5,6 +5,7 @@ import { OrderStatus, NotificationType, NotificationChannel, AssignmentStatus } 
 import { STATUS_LABELS } from '@/components/ui/status-badge';
 import { NotificationsService } from './notifications.service';
 import { TelegramNotificationService, TelegramGroupEventType } from '@/modules/telegram/notification.service';
+import { isWarehouseOpenOnDate, CONFIRMED_WAREHOUSES } from '@/modules/warehouses/warehouses.service';
 
 export class NotificationDispatcherService {
   /**
@@ -16,12 +17,35 @@ export class NotificationDispatcherService {
     try {
       const order = await prisma.order.findUnique({
         where: { id: orderId },
-        include: { warehouse: true },
+        include: { warehouse: true, client: true },
       });
 
-      if (!order) return false;
+      if (!order) {
+        logger.warn({ event: 'ORDER_CREATED_DISPATCH_FINISHED', orderId, error: 'Order not found in database' });
+        return false;
+      }
 
-      await TelegramNotificationService.notifyGroupEvent('ORDER_CREATED', {
+      logger.info({
+        event: 'ORDER_CREATED_DISPATCH_STARTED',
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        marketplace: order.marketplace,
+        warehouseName: order.warehouse.name,
+      });
+
+      const confirmedWh = CONFIRMED_WAREHOUSES.find(
+        (c) => c.id === order.warehouseId || c.code === order.warehouse.code
+      );
+      const isStandardDay =
+        confirmedWh && order.scheduledPickupAt
+          ? isWarehouseOpenOnDate(confirmedWh, order.scheduledPickupAt)
+          : true;
+      const scheduleNote =
+        !isStandardDay && confirmedWh
+          ? `Дата вне стандартного графика склада (${confirmedWh.scheduleDescription}). Требуется подтверждение логиста.`
+          : null;
+
+      const res = await TelegramNotificationService.notifyManagersOrderPendingApproval({
         orderId: order.id,
         orderNumber: order.orderNumber,
         marketplace: order.marketplace,
@@ -29,10 +53,30 @@ export class NotificationDispatcherService {
         scheduledPickupAt: order.scheduledPickupAt,
         totalBoxesCount: order.totalBoxesCount,
         totalPalletsCount: order.totalPalletsCount,
+        clientCompanyName: order.client?.companyName,
+        clientContactPerson: order.client?.contactPerson,
+        clientPhone: order.client?.contactPhone,
+        clientComment: order.clientComment,
+        currentStatus: 'CREATED (Ожидает подтверждения)',
+        scheduleNote,
       });
 
-      return true;
+      logger.info({
+        event: 'ORDER_CREATED_DISPATCH_FINISHED',
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        sent: res.sent,
+        duplicate: res.duplicate,
+        skippedReason: res.skippedReason,
+      });
+
+      return res.sent;
     } catch (err: unknown) {
+      logger.error({
+        event: 'ORDER_CREATED_DISPATCH_FINISHED',
+        orderId,
+        error: err instanceof Error ? err.message : 'Unknown error during order notification dispatch',
+      });
       safeLogError(err, 'Error in notifyOrderCreated');
       return false;
     }
@@ -242,18 +286,9 @@ export class NotificationDispatcherService {
 
       if (!order) return false;
 
-      // 1. Dispatch group notification via Manager Bot
-      await TelegramNotificationService.notifyGroupEvent('COST_CALCULATED', {
-        orderId: order.id,
-        orderNumber: order.orderNumber,
-        marketplace: order.marketplace,
-        warehouseName: order.warehouse.name,
-        scheduledPickupAt: order.scheduledPickupAt,
-        totalBoxesCount: order.totalBoxesCount,
-        totalPalletsCount: order.totalPalletsCount,
-        costAmount,
-        currency,
-      });
+      // Note: In accordance with AliBros Logistics financial privacy policy,
+      // delivery costs and financial figures are NEVER dispatched to group Telegram chats.
+      // Costs remain strictly internal and are sent exclusively to the authorized client via private DM.
 
       // 2. Notify client via Client Bot if telegram account linked
       const clientTg = order.client?.user?.telegramAccount;
@@ -358,9 +393,10 @@ export class NotificationDispatcherService {
       }
 
       // 3. Map status to group lifecycle event
+      // Requirement: Orders rejected prior to confirmation must NEVER reach the group chat.
       const statusToGroupEventMap: Partial<Record<OrderStatus, TelegramGroupEventType>> = {
         [OrderStatus.CONFIRMED]: 'ORDER_CONFIRMED',
-        [OrderStatus.REJECTED_BY_MANAGER]: 'ORDER_REJECTED',
+        ...(fromStatus !== OrderStatus.CREATED ? { [OrderStatus.REJECTED_BY_MANAGER]: 'ORDER_REJECTED' as TelegramGroupEventType } : {}),
         [OrderStatus.ACCEPTED_BY_DRIVER]: 'DRIVER_ACCEPTED',
         [OrderStatus.PICKED_UP]: 'CARGO_PICKED_UP',
         [OrderStatus.IN_TRANSIT]: 'IN_TRANSIT',

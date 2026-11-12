@@ -11,9 +11,12 @@ import {
 import { DriverOrderService } from '@/modules/orders/driver-order.service';
 import { DriverPhotoService } from './photo.service';
 import { STATUS_LABELS } from '@/components/ui/status-badge';
-import { OrderStatus, PhotoType } from '@prisma/client';
+import { AuditAction, NotificationChannel, NotificationType, OrderStatus, PhotoType } from '@prisma/client';
 import { prisma } from '@/database/prisma';
 import { logger } from '@/lib/logger';
+import { AuditService } from '@/modules/audit/audit.service';
+import { NotificationsService } from '@/modules/notifications/notifications.service';
+import { TelegramNotificationService } from './notification.service';
 
 export interface TelegramIncomingUpdate {
   update_id: number;
@@ -159,9 +162,9 @@ export class TelegramBotService {
 
       // 1. Check if client sent pairing code, e.g. "/start ABL-123456" or "ABL-123456"
       let pairingCode: string | null = null;
-      if (text.startsWith('/start ')) {
-        const potential = text.replace('/start ', '').trim();
-        if (potential.length > 0) pairingCode = potential;
+      const startMatch = text.match(/^\/start(?:@\w+)?(?:\s+|=)(.+)$/i);
+      if (startMatch && startMatch[1]) {
+        pairingCode = startMatch[1].trim();
       } else if (text.toUpperCase().startsWith('ABL-') || (text.length === 10 && text.includes('-'))) {
         pairingCode = text.trim();
       }
@@ -338,7 +341,7 @@ export class TelegramBotService {
     const managerBot = getManagerTelegramBotClient();
 
     if (update.callback_query) {
-      await managerBot.answerCallbackQuery(update.callback_query.id);
+      await this.handleManagerCallbackQuery(update.callback_query);
       return;
     }
 
@@ -348,16 +351,27 @@ export class TelegramBotService {
       const text = msg.text?.trim() || '';
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://alibros.com';
 
+      logger.info({
+        event: 'MANAGER_BOT_UPDATE_RECEIVED',
+        isStartCommand: text.startsWith('/start'),
+        textLength: text.length,
+      });
+
       // 1. Check if manager sent pairing code
       let pairingCode: string | null = null;
-      if (text.startsWith('/start ')) {
-        const potential = text.replace('/start ', '').trim();
-        if (potential.length > 0) pairingCode = potential;
+      const startMatch = text.match(/^\/start(?:@\w+)?(?:\s+|=)(.+)$/i);
+      if (startMatch && startMatch[1]) {
+        pairingCode = startMatch[1].trim();
       } else if (text.toUpperCase().startsWith('ABL-') || (text.length === 10 && text.includes('-'))) {
         pairingCode = text.trim();
       }
 
       if (pairingCode) {
+        logger.info({
+          event: 'MANAGER_BOT_PAIRING_ATTEMPT',
+          codePrefix: pairingCode.slice(0, 4),
+        });
+
         const result = await ManagerPairingService.verifyAndLinkManager(tgId, pairingCode, {
           username: msg.from.username,
           firstName: msg.from.first_name,
@@ -366,19 +380,29 @@ export class TelegramBotService {
         });
 
         if (result.success) {
+          logger.info({
+            event: 'MANAGER_BOT_PAIRING_SUCCESS',
+            managerProfileId: result.managerProfileId,
+          });
+
           await managerBot.sendMessage({
             chatId: tgId,
             text: [
               `✅ <b>Авторизация менеджера успешна!</b>`,
               ``,
               `Здравствуйте, <b>${result.fullName}</b>!`,
-              `Ваш аккаунт подтверждён для управления и мониторинга логистических операций AliBros.`,
-              `Все критические уведомления по заявкам транслируются в общую рабочую группу.`,
+              `Ваш аккаунт подтверждён для управления и согласования клиентских заявок AliBros.`,
+              `Карточки новых заявок для модерации будут поступать прямо в этот чат.`,
             ].join('\n'),
             parseMode: 'HTML',
           });
           return;
         } else {
+          logger.warn({
+            event: 'MANAGER_BOT_PAIRING_FAILED',
+            error: result.error,
+          });
+
           await managerBot.sendMessage({
             chatId: tgId,
             text: `❌ <b>Ошибка привязки:</b>\n${result.error}`,
@@ -465,6 +489,287 @@ export class TelegramBotService {
   }
 
   /**
+   * Handles callback queries for Manager Bot (@AliBrosManagerBot).
+   * Implements Stage 2 of the Two-Stage Approval Workflow:
+   * - Validates manager authentication and RBAC permissions
+   * - Atomically transitions order status (CREATED -> CONFIRMED / REJECTED_BY_MANAGER)
+   * - Prevents race conditions and duplicate clicks
+   * - Updates message in Telegram removing inline buttons
+   * - Broadcasts CONFIRMED orders to the shipping group
+   * - Notifies client via Client Bot
+   * - Strictly ensures rejected orders NEVER reach the group chat
+   */
+  public static async handleManagerCallbackQuery(
+    cb: NonNullable<TelegramIncomingUpdate['callback_query']>
+  ): Promise<void> {
+    const managerBot = getManagerTelegramBotClient();
+    const tgId = cb.from.id;
+    const data = cb.data || '';
+
+    // Match action format: mg:accept:<orderId> or mg:reject:<orderId>
+    const match = data.match(/^mg:(accept|reject):([a-zA-Z0-9_-]+)$/);
+    if (!match) {
+      await managerBot.answerCallbackQuery(cb.id);
+      return;
+    }
+
+    const action = match[1] as 'accept' | 'reject';
+    const orderId = match[2];
+
+    // 1. RBAC Authentication
+    const managerUser = await ManagerPairingService.getManagerByTelegramId(tgId);
+    if (!managerUser) {
+      await managerBot.answerCallbackQuery(
+        cb.id,
+        '❌ Доступ запрещён. Вы не авторизованы как сотрудник AliBros Logistics.',
+        true
+      );
+      return;
+    }
+
+    const managerName = managerUser.managerProfile?.fullName || managerUser.email || 'Менеджер';
+
+    // 2. Atomic Status Transition in PostgreSQL
+    const targetStatus = action === 'accept' ? OrderStatus.CONFIRMED : OrderStatus.REJECTED_BY_MANAGER;
+    const historyComment =
+      action === 'accept'
+        ? `Заявка подтверждена менеджером ${managerName} через Telegram Bot`
+        : `Заявка отклонена менеджером ${managerName} через Telegram Bot`;
+
+    let txResult: {
+      outcome: 'SUCCESS' | 'NOT_FOUND' | 'ALREADY_PROCESSED';
+      currentStatus?: OrderStatus;
+      order?: any;
+    };
+
+    try {
+      txResult = await prisma.$transaction(async (tx) => {
+        const order = await tx.order.findUnique({
+          where: { id: orderId },
+          include: {
+            warehouse: true,
+            client: {
+              include: {
+                user: {
+                  include: {
+                    telegramAccount: true,
+                  },
+                },
+              },
+            },
+          },
+        });
+
+        if (!order) {
+          return { outcome: 'NOT_FOUND' };
+        }
+
+        if (order.status !== OrderStatus.CREATED) {
+          return { outcome: 'ALREADY_PROCESSED', currentStatus: order.status, order };
+        }
+
+        // Concurrency barrier: updateMany with strict WHERE status = CREATED
+        const updateCount = await tx.order.updateMany({
+          where: {
+            id: orderId,
+            status: OrderStatus.CREATED,
+          },
+          data: {
+            status: targetStatus,
+          },
+        });
+
+        if (updateCount.count === 0) {
+          return { outcome: 'ALREADY_PROCESSED', currentStatus: order.status, order };
+        }
+
+        await tx.orderStatusHistory.create({
+          data: {
+            orderId,
+            fromStatus: OrderStatus.CREATED,
+            toStatus: targetStatus,
+            changedById: managerUser.id,
+            comment: historyComment,
+          },
+        });
+
+        return { outcome: 'SUCCESS', currentStatus: targetStatus, order };
+      });
+    } catch (err: unknown) {
+      logger.error({ err, orderId, action, tgId }, 'Database error during manager approval callback');
+      await managerBot.answerCallbackQuery(cb.id, '❌ Произошла ошибка базы данных при обработке заявки.', true);
+      return;
+    }
+
+    // 3. Handle Already Processed / Not Found
+    if (txResult.outcome === 'NOT_FOUND') {
+      await managerBot.answerCallbackQuery(cb.id, '❌ Заявка не найдена в системе.', true);
+      return;
+    }
+
+    if (txResult.outcome === 'ALREADY_PROCESSED') {
+      const statusLabel = STATUS_LABELS[txResult.currentStatus!] || txResult.currentStatus;
+      await managerBot.answerCallbackQuery(
+        cb.id,
+        `ℹ️ Заявка уже была обработана ранее (текущий статус: ${statusLabel}).`,
+        true
+      );
+
+      // Clean up buttons from manager's message to prevent further clicks
+      if (cb.message?.message_id && cb.message.chat?.id) {
+        const originalText = cb.message.text || '';
+        const cleanedText = originalText
+          .replace('Пожалуйста, подтвердите или отклоните заявку:', '')
+          .trim();
+        await managerBot.editMessageText({
+          chatId: cb.message.chat.id,
+          messageId: cb.message.message_id,
+          text: `${cleanedText}\n\n<i>ℹ️ Заявка уже обработана ранее (статус: ${statusLabel}).</i>`,
+          parseMode: 'HTML',
+        }).catch(() => {});
+      }
+      return;
+    }
+
+    const processedOrder = txResult.order!;
+
+    // 4. Audit Log
+    try {
+      await AuditService.log({
+        userId: managerUser.id,
+        action: AuditAction.STATUS_CHANGE,
+        resource: 'Order',
+        resourceId: orderId,
+        oldValue: { status: OrderStatus.CREATED },
+        newValue: { status: targetStatus },
+        metadata: {
+          source: 'TELEGRAM_MANAGER_BOT',
+          action,
+          telegramId: tgId.toString(),
+        },
+      });
+    } catch {
+      // Safe non-blocking audit failure
+    }
+
+    // 5. Update Manager Telegram Message (remove buttons & display confirmation)
+    if (cb.message?.message_id && cb.message.chat?.id) {
+      const originalText = cb.message.text || '';
+      const cleanedText = originalText
+        .replace('Пожалуйста, подтвердите или отклоните заявку:', '')
+        .trim();
+
+      const statusBadge =
+        action === 'accept'
+          ? `✅ <b>Заявка подтверждена</b> менеджером <b>${managerName}</b>\n📤 Отправлена в оперативную группу отгрузки.`
+          : `❌ <b>Заявка отклонена</b> менеджером <b>${managerName}</b>.`;
+
+      await managerBot.editMessageText({
+        chatId: cb.message.chat.id,
+        messageId: cb.message.message_id,
+        text: `${cleanedText}\n\n${statusBadge}`,
+        parseMode: 'HTML',
+      }).catch(() => {});
+    }
+
+    // 6. Action-Specific Dispatches
+    if (action === 'accept') {
+      // 6a. Answer callback query
+      await managerBot.answerCallbackQuery(cb.id, '✅ Заявка подтверждена и опубликована в группе!');
+
+      // 6b. Dispatch ORDER_CONFIRMED to the shipping group
+      await TelegramNotificationService.notifyGroupEvent('ORDER_CONFIRMED', {
+        orderId: processedOrder.id,
+        orderNumber: processedOrder.orderNumber,
+        marketplace: processedOrder.marketplace,
+        warehouseName: processedOrder.warehouse.name,
+        scheduledPickupAt: processedOrder.scheduledPickupAt,
+        totalBoxesCount: processedOrder.totalBoxesCount,
+        totalPalletsCount: processedOrder.totalPalletsCount,
+        managerComment: `Подтверждено: ${managerName}`,
+      }).catch((e) => logger.error({ err: e }, 'Failed to dispatch group ORDER_CONFIRMED'));
+
+      // 6c. Notify Client (In-App)
+      if (processedOrder.client?.userId) {
+        try {
+          await NotificationsService.queue({
+            userId: processedOrder.client.userId,
+            type: NotificationType.ORDER_STATUS_CHANGED,
+            channel: NotificationChannel.IN_APP,
+            title: `Заявка #${processedOrder.orderNumber} подтверждена`,
+            body: `Менеджер ${managerName} подтвердил вашу заявку на доставку в ${processedOrder.warehouse.name}.`,
+            payload: { orderId: processedOrder.id, status: OrderStatus.CONFIRMED },
+          });
+        } catch {
+          // Safe non-blocking in-app notification failure
+        }
+
+        // 6d. Notify Client (Client Bot DM)
+        const clientTg = processedOrder.client.user?.telegramAccount;
+        if (clientTg?.telegramId) {
+          const clientBot = getClientTelegramBotClient();
+          await clientBot.sendMessageWithRetry({
+            chatId: clientTg.telegramId.toString(),
+            text: [
+              `✅ <b>Ваша заявка подтверждена</b>`,
+              ``,
+              `Заявка: <code>#${processedOrder.orderNumber}</code>`,
+              `Склад: <b>${processedOrder.warehouse.name}</b> (${processedOrder.marketplace})`,
+              `Статус: <b>Подтверждена</b>. Поиск водителя для забора груза.`,
+            ].join('\n'),
+            parseMode: 'HTML',
+          }).catch(() => {});
+        }
+      }
+    } else {
+      // 6e. Rejection flow
+      await managerBot.answerCallbackQuery(cb.id, '❌ Заявка отклонена.');
+
+      // Notify Client (In-App)
+      if (processedOrder.client?.userId) {
+        try {
+          await NotificationsService.queue({
+            userId: processedOrder.client.userId,
+            type: NotificationType.ORDER_STATUS_CHANGED,
+            channel: NotificationChannel.IN_APP,
+            title: `Заявка #${processedOrder.orderNumber} отклонена`,
+            body: `Ваша заявка была отклонена менеджером.`,
+            payload: { orderId: processedOrder.id, status: OrderStatus.REJECTED_BY_MANAGER },
+          });
+        } catch {
+          // Safe non-blocking in-app notification failure
+        }
+
+        // Notify Client (Client Bot DM)
+        const clientTg = processedOrder.client.user?.telegramAccount;
+        if (clientTg?.telegramId) {
+          const clientBot = getClientTelegramBotClient();
+          await clientBot.sendMessageWithRetry({
+            chatId: clientTg.telegramId.toString(),
+            text: [
+              `❌ <b>Ваша заявка отклонена</b>`,
+              ``,
+              `Заявка: <code>#${processedOrder.orderNumber}</code>`,
+              `Склад: <b>${processedOrder.warehouse.name}</b> (${processedOrder.marketplace})`,
+              `Статус: <b>Отклонена менеджером</b>.`,
+              `При необходимости свяжитесь со службой поддержки AliBros.`,
+            ].join('\n'),
+            parseMode: 'HTML',
+          }).catch(() => {});
+        }
+      }
+
+      // STRICT REQUIREMENT: Rejected orders NEVER reach the group chat. No group notification dispatched.
+      logger.info({
+        event: 'MANAGER_APPROVAL_REJECTED',
+        orderId: processedOrder.id,
+        orderNumber: processedOrder.orderNumber,
+        managerId: managerUser.id,
+      }, 'Order rejected by manager. Group notification skipped per strict privacy/workflow requirement.');
+    }
+  }
+
+  /**
    * Handles messages from users who have not yet linked their Telegram account.
    */
   private static async handleUnlinkedUserMessage(
@@ -476,8 +781,9 @@ export class TelegramBotService {
 
     // Check if message is /start with code, e.g. "/start ABL-123456"
     let pairingCode: string | null = null;
-    if (text.startsWith('/start ')) {
-      pairingCode = text.replace('/start ', '').trim();
+    const startMatch = text.match(/^\/start(?:@\w+)?(?:\s+|=)(.+)$/i);
+    if (startMatch && startMatch[1]) {
+      pairingCode = startMatch[1].trim();
     } else if (text.toUpperCase().startsWith('ABL-') || text.length === 10) {
       pairingCode = text.trim();
     }

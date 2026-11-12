@@ -1,11 +1,12 @@
 import { prisma } from '@/database/prisma';
+import { logger } from '@/lib/logger';
 import { generateOrderNumber } from '@/lib/utils';
 import { NotFoundError, ForbiddenError, ValidationError } from '@/lib/errors';
 import { assertOrderAccess } from '@/server/guards';
 import { AuthenticatedUser } from '@/types/rbac';
 import { AuditService } from '@/modules/audit/audit.service';
 import { AuditAction, AssignmentStatus, MarketplaceType, OrderStatus, Prisma, UserRole } from '@prisma/client';
-import { WarehousesService } from '@/modules/warehouses/warehouses.service';
+import { WarehousesService, isWarehouseOpenOnDate } from '@/modules/warehouses/warehouses.service';
 import { CreateOrderDto, CreateClientOrderDto, UpdateOrderStatusDto, AssignDriverDto } from './orders.dto';
 import { NotificationDispatcherService } from '@/modules/notifications/dispatcher.service';
 import { IdempotencyService } from '@/lib/security/idempotency.service';
@@ -66,8 +67,17 @@ export class OrdersService {
     const warehouse = await WarehousesService.getById(dto.warehouseId);
     if (!warehouse) throw new NotFoundError('Warehouse', dto.warehouseId);
 
-    // Server-side schedule validation
-    WarehousesService.assertWarehouseAvailable(warehouse, dto.deliveryDate);
+    // Informational schedule check (does not block order submission; manager reviews in approval workflow)
+    const isStandardScheduleDay = isWarehouseOpenOnDate(warehouse, dto.deliveryDate);
+    if (!isStandardScheduleDay) {
+      logger.info({
+        event: 'WAREHOUSE_NON_STANDARD_SCHEDULE_ORDER',
+        warehouseId: warehouse.id,
+        warehouseName: warehouse.name,
+        deliveryDate: dto.deliveryDate,
+        scheduleDescription: warehouse.scheduleDescription,
+      }, 'Client created order with delivery date outside standard warehouse schedule; order submitted for manager moderation');
+    }
 
     const idempotencyPayload = {
       clientId: client.id,
@@ -136,7 +146,26 @@ export class OrdersService {
       metadata: { orderNumber: result.orderNumber, marketplace: result.marketplace },
     });
 
-    NotificationDispatcherService.notifyOrderCreated(result.id).catch(() => {});
+    logger.info({
+      event: 'ORDER_CREATED_TRIGGERED',
+      orderId: result.id,
+      orderNumber: result.orderNumber,
+      marketplace: result.marketplace,
+      totalBoxesCount: result.totalBoxesCount,
+      totalPalletsCount: result.totalPalletsCount,
+      source: 'CLIENT_PORTAL',
+    });
+
+    try {
+      await NotificationDispatcherService.notifyOrderCreated(result.id);
+    } catch (notifErr: unknown) {
+      logger.error({
+        event: 'ORDER_NOTIFICATION_ERROR',
+        orderId: result.id,
+        orderNumber: result.orderNumber,
+        error: notifErr instanceof Error ? notifErr.message : 'Notification failed',
+      });
+    }
 
     return result;
   }
@@ -239,7 +268,26 @@ export class OrdersService {
       metadata: { orderNumber: order.orderNumber, marketplace: order.marketplace },
     });
 
-    NotificationDispatcherService.notifyOrderCreated(order.id).catch(() => {});
+    logger.info({
+      event: 'ORDER_CREATED_TRIGGERED',
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      marketplace: order.marketplace,
+      totalBoxesCount: order.totalBoxesCount,
+      totalPalletsCount: order.totalPalletsCount,
+      source: 'ADMIN_OR_API',
+    });
+
+    try {
+      await NotificationDispatcherService.notifyOrderCreated(order.id);
+    } catch (notifErr: unknown) {
+      logger.error({
+        event: 'ORDER_NOTIFICATION_ERROR',
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        error: notifErr instanceof Error ? notifErr.message : 'Notification failed',
+      });
+    }
 
     return order;
   }

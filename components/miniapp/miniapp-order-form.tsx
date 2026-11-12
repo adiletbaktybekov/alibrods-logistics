@@ -30,32 +30,31 @@ export function MiniAppOrderForm({ warehouses }: MiniAppOrderFormProps) {
   const minDateString = tomorrow.toISOString().split('T')[0];
 
   const [deliveryDate, setDeliveryDate] = React.useState<string>(minDateString);
-  const [boxes, setBoxes] = React.useState<number>(1);
-  const [pallets, setPallets] = React.useState<number>(0);
-
-  // Filter warehouses based on chosen date schedule
-  const availableWarehouses = React.useMemo(() => {
-    return warehouses.filter((w) => isWarehouseOpenOnDate(w, deliveryDate));
-  }, [warehouses, deliveryDate]);
+  const [boxesStr, setBoxesStr] = React.useState<string>('1');
+  const [palletsStr, setPalletsStr] = React.useState<string>('0');
 
   const [selectedWarehouseId, setSelectedWarehouseId] = React.useState<string>(
-    availableWarehouses[0]?.id || ''
+    warehouses[0]?.id || ''
   );
-
-  React.useEffect(() => {
-    if (availableWarehouses.length > 0) {
-      const exists = availableWarehouses.some((w) => w.id === selectedWarehouseId);
-      if (!exists) {
-        setSelectedWarehouseId(availableWarehouses[0].id);
-      }
-    } else {
-      setSelectedWarehouseId('');
-    }
-  }, [availableWarehouses, selectedWarehouseId]);
 
   const selectedWarehouse = warehouses.find((w) => w.id === selectedWarehouseId);
   const dayOfWeekNumber = getDayOfWeekFromDate(deliveryDate);
   const dayOfWeekName = RUSSIAN_DAY_NAMES[dayOfWeekNumber] || '';
+  const isWarehouseOpenToday = selectedWarehouse
+    ? isWarehouseOpenOnDate(selectedWarehouse, deliveryDate)
+    : true;
+
+  const handleBoxesChange = (delta: number) => {
+    const current = parseInt(boxesStr || '0', 10);
+    const next = Math.max(1, current + delta);
+    setBoxesStr(String(next));
+  };
+
+  const handlePalletsChange = (delta: number) => {
+    const current = parseInt(palletsStr || '0', 10);
+    const next = Math.max(0, current + delta);
+    setPalletsStr(String(next));
+  };
 
   return (
     <form
@@ -92,7 +91,7 @@ export function MiniAppOrderForm({ warehouses }: MiniAppOrderFormProps) {
           className="text-xs py-2 bg-slate-50 border-slate-300"
         />
         <p className="text-[10px] text-slate-400">
-          Список складов автоматически адаптируется под день недели
+          Выберите удобную дату забора/доставки груза
         </p>
       </div>
 
@@ -103,7 +102,7 @@ export function MiniAppOrderForm({ warehouses }: MiniAppOrderFormProps) {
             Склад назначения *
           </Label>
           <span className="text-[10px] text-slate-400">
-            Доступно: {availableWarehouses.length} из 12
+            Всего складов: {warehouses.length}
           </span>
         </div>
 
@@ -115,7 +114,7 @@ export function MiniAppOrderForm({ warehouses }: MiniAppOrderFormProps) {
           onChange={(e) => setSelectedWarehouseId(e.target.value)}
           className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
         >
-          {availableWarehouses.map((wh) => (
+          {warehouses.map((wh) => (
             <option key={wh.id} value={wh.id}>
               {wh.name} ({wh.marketplace === 'WILDBERRIES' ? 'WB' : wh.marketplace}) — {wh.scheduleDescription}
             </option>
@@ -126,6 +125,12 @@ export function MiniAppOrderForm({ warehouses }: MiniAppOrderFormProps) {
           <div className="text-[11px] text-slate-500 pt-1 flex items-center justify-between">
             <span>График приёма:</span>
             <span className="font-medium text-slate-800">{selectedWarehouse.scheduleDescription}</span>
+          </div>
+        )}
+
+        {selectedWarehouse && !isWarehouseOpenToday && (
+          <div className="text-[11px] text-amber-800 bg-amber-50 rounded-lg p-2 border border-amber-200 mt-1">
+            ℹ️ По стандартному графику склад «{selectedWarehouse.name}» работает: {selectedWarehouse.scheduleDescription}. Заявка на {deliveryDate} ({dayOfWeekName}) будет согласована логистом индивидуально.
           </div>
         )}
       </div>
@@ -144,7 +149,7 @@ export function MiniAppOrderForm({ warehouses }: MiniAppOrderFormProps) {
             <div className="flex items-center gap-1.5 mt-1">
               <button
                 type="button"
-                onClick={() => setBoxes(Math.max(1, boxes - 1))}
+                onClick={() => handleBoxesChange(-1)}
                 className="w-8 h-8 rounded-lg bg-slate-100 text-slate-700 font-bold text-sm active:bg-slate-200 flex items-center justify-center"
               >
                 −
@@ -152,16 +157,27 @@ export function MiniAppOrderForm({ warehouses }: MiniAppOrderFormProps) {
               <input
                 id="totalBoxesCount"
                 name="totalBoxesCount"
-                type="number"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
                 required
-                min={1}
-                value={boxes}
-                onChange={(e) => setBoxes(Math.max(1, parseInt(e.target.value) || 1))}
+                value={boxesStr}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === '' || /^\d+$/.test(val)) {
+                    setBoxesStr(val);
+                  }
+                }}
+                onBlur={() => {
+                  if (!boxesStr || parseInt(boxesStr, 10) < 1) {
+                    setBoxesStr('1');
+                  }
+                }}
                 className="w-full text-center rounded-lg border border-slate-300 py-1.5 text-xs font-semibold"
               />
               <button
                 type="button"
-                onClick={() => setBoxes(boxes + 1)}
+                onClick={() => handleBoxesChange(1)}
                 className="w-8 h-8 rounded-lg bg-slate-100 text-slate-700 font-bold text-sm active:bg-slate-200 flex items-center justify-center"
               >
                 +
@@ -176,7 +192,7 @@ export function MiniAppOrderForm({ warehouses }: MiniAppOrderFormProps) {
             <div className="flex items-center gap-1.5 mt-1">
               <button
                 type="button"
-                onClick={() => setPallets(Math.max(0, pallets - 1))}
+                onClick={() => handlePalletsChange(-1)}
                 className="w-8 h-8 rounded-lg bg-slate-100 text-slate-700 font-bold text-sm active:bg-slate-200 flex items-center justify-center"
               >
                 −
@@ -184,15 +200,26 @@ export function MiniAppOrderForm({ warehouses }: MiniAppOrderFormProps) {
               <input
                 id="totalPalletsCount"
                 name="totalPalletsCount"
-                type="number"
-                min={0}
-                value={pallets}
-                onChange={(e) => setPallets(Math.max(0, parseInt(e.target.value) || 0))}
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={palletsStr}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === '' || /^\d+$/.test(val)) {
+                    setPalletsStr(val);
+                  }
+                }}
+                onBlur={() => {
+                  if (!palletsStr) {
+                    setPalletsStr('0');
+                  }
+                }}
                 className="w-full text-center rounded-lg border border-slate-300 py-1.5 text-xs font-semibold"
               />
               <button
                 type="button"
-                onClick={() => setPallets(pallets + 1)}
+                onClick={() => handlePalletsChange(1)}
                 className="w-8 h-8 rounded-lg bg-slate-100 text-slate-700 font-bold text-sm active:bg-slate-200 flex items-center justify-center"
               >
                 +
