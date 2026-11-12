@@ -609,9 +609,35 @@ export class TelegramBotService {
 
     if (txResult.outcome === 'ALREADY_PROCESSED') {
       const statusLabel = STATUS_LABELS[txResult.currentStatus!] || txResult.currentStatus;
+
+      // Safe retry for CONFIRMED orders if group notification was not previously dispatched
+      let retryDispatched = false;
+      if (action === 'accept' && txResult.currentStatus === OrderStatus.CONFIRMED && txResult.order) {
+        const processedOrder = txResult.order;
+        try {
+          const groupRes = await TelegramNotificationService.notifyGroupEvent('ORDER_CONFIRMED', {
+            orderId: processedOrder.id,
+            orderNumber: processedOrder.orderNumber,
+            marketplace: processedOrder.marketplace,
+            warehouseName: processedOrder.warehouse?.name || 'Склад',
+            scheduledPickupAt: processedOrder.scheduledPickupAt,
+            totalBoxesCount: processedOrder.totalBoxesCount,
+            totalPalletsCount: processedOrder.totalPalletsCount,
+            managerComment: `Подтверждено: ${managerName}`,
+          });
+          if (groupRes.sent) {
+            retryDispatched = true;
+          }
+        } catch (e) {
+          logger.error({ err: e, orderId }, 'Retry dispatch of group ORDER_CONFIRMED failed');
+        }
+      }
+
       await managerBot.answerCallbackQuery(
         cb.id,
-        `ℹ️ Заявка уже была обработана ранее (текущий статус: ${statusLabel}).`,
+        retryDispatched
+          ? '✅ Заявка подтверждена и опубликована в группе отгрузки!'
+          : `ℹ️ Заявка уже была обработана ранее (текущий статус: ${statusLabel}).`,
         true
       );
 
@@ -624,7 +650,7 @@ export class TelegramBotService {
         await managerBot.editMessageText({
           chatId: cb.message.chat.id,
           messageId: cb.message.message_id,
-          text: `${cleanedText}\n\n<i>ℹ️ Заявка уже обработана ранее (статус: ${statusLabel}).</i>`,
+          text: `${cleanedText}\n\n<i>ℹ️ Заявка уже обработана (статус: ${statusLabel}).</i>`,
           parseMode: 'HTML',
         }).catch(() => {});
       }
