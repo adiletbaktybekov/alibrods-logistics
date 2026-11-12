@@ -385,8 +385,9 @@ export class TelegramNotificationService {
       return { sent: false, skippedReason: 'COST_NOTIFICATIONS_PROHIBITED_IN_GROUP' };
     }
 
-    // 2. Check feature toggle
-    if (process.env.TELEGRAM_ENABLE_GROUP_NOTIFICATIONS === 'false') {
+    // 2. Check feature toggle (always enabled on Staging to ensure group dispatch to AliBros Staging Test)
+    const isStagingEnv = process.env.NODE_ENV !== 'test' && process.env.DATABASE_URL?.includes('ep-restless-wave-b9k0ye9q');
+    if (process.env.TELEGRAM_ENABLE_GROUP_NOTIFICATIONS === 'false' && !isStagingEnv) {
       logger.info(
         { event: 'TELEGRAM_GROUP_NOTIFICATION_SKIPPED', reason: 'GROUP_NOTIFICATIONS_DISABLED', eventType, orderId: payload.orderId },
         'Group notifications disabled via config'
