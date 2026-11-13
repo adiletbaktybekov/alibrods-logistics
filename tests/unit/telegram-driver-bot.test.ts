@@ -21,6 +21,7 @@ import { OrderStatus, PhotoType } from '@prisma/client';
 
 describe('Telegram Driver Bot & Pairing System', () => {
   beforeEach(async () => {
+    process.env.DATABASE_URL = 'postgresql://mock:mock@localhost:5432/mock';
     await DriverPairingService._clearAllCodesForTesting();
   });
 
@@ -156,20 +157,20 @@ describe('Telegram Driver Bot & Pairing System', () => {
       ).toThrow('Разрешены только JPG, PNG и WEBP');
     });
 
-    it('should manage pending driver photo upload sessions with TTL', () => {
-      DriverPhotoService.setPendingUploadSession(
+    it('should manage pending driver photo upload sessions with TTL', async () => {
+      await DriverPhotoService.setPendingUploadSession(
         'driver-123',
         'order-456',
         PhotoType.CARGO_PICKUP
       );
 
-      const session = DriverPhotoService.getPendingUploadSession('driver-123');
+      const session = await DriverPhotoService.getPendingUploadSession('driver-123');
       expect(session).not.toBeNull();
       expect(session?.orderId).toBe('order-456');
       expect(session?.photoType).toBe(PhotoType.CARGO_PICKUP);
 
-      DriverPhotoService.clearPendingUploadSession('driver-123');
-      expect(DriverPhotoService.getPendingUploadSession('driver-123')).toBeNull();
+      await DriverPhotoService.clearPendingUploadSession('driver-123');
+      expect(await DriverPhotoService.getPendingUploadSession('driver-123')).toBeNull();
     });
 
     it('S3StorageProvider should explicitly report inactive cloud storage when unconfigured', async () => {

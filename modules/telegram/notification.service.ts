@@ -413,11 +413,11 @@ export class TelegramNotificationService {
       groupChatId =
         process.env.TELEGRAM_MANAGER_GROUP_CHAT_ID ||
         process.env.TELEGRAM_GROUP_CHAT_ID ||
-        '-1003893397086';
+        (process.env.NODE_ENV === 'test' ? undefined : '-1003893397086');
       groupTopicId =
         process.env.TELEGRAM_MANAGER_GROUP_TOPIC_ID ||
         process.env.TELEGRAM_GROUP_TOPIC_ID ||
-        '8';
+        (process.env.NODE_ENV === 'test' ? undefined : '8');
     }
 
     if (!groupChatId) {

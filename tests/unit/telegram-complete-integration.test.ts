@@ -12,6 +12,7 @@ import {
   TelegramNotificationService,
   TelegramGroupEventType,
 } from '@/modules/telegram/notification.service';
+import { TelegramBotClient } from '@/integrations/telegram/client';
 import { DriverPhotoService, MAX_PHOTO_SIZE_BYTES } from '@/modules/telegram/photo.service';
 import {
   DRIVER_ALLOWED_TRANSITIONS,
@@ -372,7 +373,11 @@ describe('AliBros Logistics: Complete Telegram 3-Bot Integration Unit Tests', ()
 
     it('should prevent duplicate group notifications using 10m sliding window dedup', async () => {
       process.env.TELEGRAM_ENABLE_GROUP_NOTIFICATIONS = 'true';
+      process.env.TELEGRAM_ENABLE_GROUP_NOTIFICATIONS = 'true';
       process.env.TELEGRAM_MANAGER_GROUP_CHAT_ID = '-1003893397086';
+      process.env.TELEGRAM_MANAGER_BOT_TOKEN = 'mock-manager-bot-token';
+
+      const sendSpy = vi.spyOn(TelegramBotClient.prototype, 'sendMessage').mockResolvedValue(true);
 
       const payload = {
         orderId: 'ord-dedup-test',
@@ -386,11 +391,13 @@ describe('AliBros Logistics: Complete Telegram 3-Bot Integration Unit Tests', ()
       // First call (mocking successful send)
       const firstRes = await TelegramNotificationService.notifyGroupEvent('ORDER_CREATED', payload);
       expect(firstRes.duplicate).toBeFalsy();
+      expect(firstRes.sent).toBe(true);
 
       // Immediate second call with identical payload must be recognized as duplicate
       const secondRes = await TelegramNotificationService.notifyGroupEvent('ORDER_CREATED', payload);
       expect(secondRes.sent).toBe(false);
       expect(secondRes.duplicate).toBe(true);
+      sendSpy.mockRestore();
     });
   });
 

@@ -11,6 +11,7 @@ export function createMockPrisma() {
   const idempotencyKeys = new Map<string, any>();
   const telegramProcessedUpdates = new Map<string, any>();
   const rateLimitEntries = new Map<string, any>();
+  const driverPhotoSessions = new Map<string, any>();
 
   // Seed default driver records
   const defaultDriver = {
@@ -423,6 +424,27 @@ export function createMockPrisma() {
         return history;
       }),
     },
+    driverPhotoSession: {
+      upsert: vi.fn(async ({ where, create, update }: any) => {
+        const existing = driverPhotoSessions.get(where.driverProfileId);
+        const record = existing ? { ...existing, ...update } : { id: `session-${Date.now()}`, ...create };
+        driverPhotoSessions.set(record.driverProfileId, record);
+        return record;
+      }),
+      findUnique: vi.fn(async ({ where }: any) => {
+        return driverPhotoSessions.get(where.driverProfileId) || null;
+      }),
+      delete: vi.fn(async ({ where }: any) => {
+        const item = driverPhotoSessions.get(where.driverProfileId);
+        driverPhotoSessions.delete(where.driverProfileId);
+        return item;
+      }),
+      deleteMany: vi.fn(async () => {
+        const count = driverPhotoSessions.size;
+        driverPhotoSessions.clear();
+        return { count };
+      }),
+    },
     $transaction: vi.fn(async (callback: any) => {
       return await callback(mockClient);
     }),
@@ -439,6 +461,7 @@ export function createMockPrisma() {
     idempotencyKeys,
     telegramProcessedUpdates,
     rateLimitEntries,
+    driverPhotoSessions,
   };
 }
 
