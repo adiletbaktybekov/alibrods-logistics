@@ -48,3 +48,4 @@ Thumbs.db
 *.sqlite
 *.sqlite-journal
 *.tsbuildinfo
+backups/
