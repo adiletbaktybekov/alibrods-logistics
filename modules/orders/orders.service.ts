@@ -9,6 +9,7 @@ import { AuditAction, AssignmentStatus, MarketplaceType, OrderStatus, Prisma, Us
 import { WarehousesService, isWarehouseOpenOnDate } from '@/modules/warehouses/warehouses.service';
 import { CreateOrderDto, CreateClientOrderDto, UpdateOrderStatusDto, AssignDriverDto } from './orders.dto';
 import { NotificationDispatcherService } from '@/modules/notifications/dispatcher.service';
+import { GoogleSheetsSyncService } from '@/modules/integrations/google-sheets-sync.service';
 import { IdempotencyService } from '@/lib/security/idempotency.service';
 
 export interface AdminDashboardDailyPoint {
@@ -691,10 +692,42 @@ export class OrdersService {
       ipAddress,
     });
 
-    // Notify driver via Telegram in background
-    NotificationDispatcherService.notifyDriverOrderAssigned(orderId, dto.driverProfileId).catch(() => {});
+    // Notify driver via Telegram with detailed status capturing
+    let notificationResult: { sent: boolean; warning?: string; reason?: string } | boolean = { sent: false };
+    try {
+      notificationResult = await NotificationDispatcherService.notifyDriverOrderAssigned(
+        orderId,
+        dto.driverProfileId
+      );
+    } catch (notifErr: unknown) {
+      logger.error(
+        {
+          event: 'DRIVER_NOTIFICATION_DISPATCH_ERROR',
+          orderId,
+          driverProfileId: dto.driverProfileId,
+          error: notifErr instanceof Error ? notifErr.message : 'Notification dispatch error',
+        },
+        'Unexpected error while dispatching driver notification'
+      );
+      notificationResult = {
+        sent: false,
+        warning: 'Не удалось отправить уведомление водителю из-за сетевой ошибки',
+      };
+    }
 
-    return result.assignment;
+    const warning =
+      typeof notificationResult === 'object' && notificationResult !== null && 'warning' in notificationResult
+        ? notificationResult.warning
+        : undefined;
+    const sent =
+      typeof notificationResult === 'object' && notificationResult !== null && 'sent' in notificationResult
+        ? Boolean(notificationResult.sent)
+        : Boolean(notificationResult);
+
+    return Object.assign(result.assignment, {
+      notificationWarning: warning,
+      notificationSent: sent,
+    });
   }
 
   /**
@@ -740,6 +773,11 @@ export class OrdersService {
       oldValue: { status: order.status },
       newValue: { status: OrderStatus.CONFIRMED },
       ipAddress,
+    });
+
+    // Synchronize to Google Sheets (Safe non-blocking)
+    GoogleSheetsSyncService.syncOrder(orderId).catch((sheetsErr) => {
+      logger.error({ err: sheetsErr, orderId }, 'Failed to sync confirmed order to Google Sheets');
     });
 
     NotificationDispatcherService.notifyOrderConfirmed(orderId, comment).catch(() => {});

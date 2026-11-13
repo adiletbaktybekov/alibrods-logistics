@@ -39,9 +39,14 @@ export class TelegramBotClient {
   }
 
   public lastSentMessageId?: number;
+  public lastError?: { httpStatus?: number; errorCode?: number; description?: string };
 
   public async sendMessage(options: SendTelegramMessageOptions): Promise<boolean> {
     if (!this.botToken) {
+      this.lastError = {
+        httpStatus: 0,
+        description: 'Telegram bot token not configured.',
+      };
       logger.warn({
         event: 'TELEGRAM_API_ERROR',
         description: 'Telegram bot token not configured. Skipping sendMessage.',
@@ -73,6 +78,11 @@ export class TelegramBotClient {
 
       const data = await response.json();
       if (!response.ok || !data.ok) {
+        this.lastError = {
+          httpStatus: response.status,
+          errorCode: data?.error_code,
+          description: data?.description || 'Telegram API returned non-OK response',
+        };
         logger.error({
           event: 'TELEGRAM_API_ERROR',
           httpStatus: response.status,
@@ -84,6 +94,7 @@ export class TelegramBotClient {
       }
 
       this.lastSentMessageId = data.result?.message_id;
+      this.lastError = undefined;
       logger.info({
         event: 'TELEGRAM_API_SUCCESS',
         chatId: options.chatId,
@@ -92,6 +103,10 @@ export class TelegramBotClient {
 
       return true;
     } catch (err) {
+      this.lastError = {
+        httpStatus: 0,
+        description: err instanceof Error ? err.message : 'Network error while contacting Telegram API',
+      };
       logger.error({
         event: 'TELEGRAM_API_ERROR',
         httpStatus: 0,

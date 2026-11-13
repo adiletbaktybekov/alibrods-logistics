@@ -17,6 +17,14 @@ export interface FullSyncResult {
   lastSyncAt?: Date;
 }
 
+export interface SingleOrderSyncResult {
+  success: boolean;
+  exported?: boolean;
+  updated?: boolean;
+  skippedReason?: string;
+  error?: string;
+}
+
 export class GoogleSheetsSyncService {
   /**
    * Performs full bi-directional sync:
@@ -298,5 +306,92 @@ export class GoogleSheetsSyncService {
       lastImportedCostsCount: (settingsConfig.lastImportedCostsCount as number) || 0,
       totalOrdersSynced: (settingsConfig.totalOrdersSynced as number) || 0,
     };
+  }
+
+  /**
+   * Synchronizes a single order to Google Sheets:
+   * - CREATED and CANCELLED orders are ignored (only CONFIRMED or later)
+   * - Idempotent: appends new row or updates existing row
+   * - Preserves accountant's delivery cost and currency
+   * - Safe non-blocking execution (does not fail caller transaction)
+   */
+  public static async syncOrder(orderId: string): Promise<SingleOrderSyncResult> {
+    const client = getGoogleSheetsClient();
+    if (!client.isConfigured()) {
+      return { success: false, skippedReason: 'NOT_CONFIGURED' };
+    }
+
+    if (!process.env.DATABASE_URL) {
+      return { success: false, skippedReason: 'DATABASE_NOT_CONFIGURED' };
+    }
+
+    try {
+      const order = await prisma.order.findUnique({
+        where: { id: orderId },
+        include: {
+          client: true,
+          warehouse: true,
+        },
+      });
+
+      if (!order) {
+        return { success: false, skippedReason: 'ORDER_NOT_FOUND' };
+      }
+
+      // Rule 1: CREATED and CANCELLED orders are NOT exported to Google Sheets
+      if (order.status === OrderStatus.CREATED || order.status === OrderStatus.CANCELLED) {
+        return { success: false, skippedReason: 'ORDER_NOT_CONFIRMED' };
+      }
+
+      const syncRecord: GoogleSheetsSyncRecord = {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        createdAt: order.createdAt.toISOString().slice(0, 19).replace('T', ' '),
+        clientCompany: order.client?.companyName || '—',
+        contactPerson: order.client?.contactPerson || order.pickupContactName || '—',
+        contactPhone: order.client?.contactPhone || order.pickupContactPhone || '—',
+        warehouseName: order.warehouse?.name || '—',
+        scheduledPickupDate: order.scheduledPickupAt
+          ? order.scheduledPickupAt.toISOString().slice(0, 10)
+          : 'По согласованию',
+        boxesCount: order.totalBoxesCount,
+        palletsCount: order.totalPalletsCount,
+        status: STATUS_LABELS[order.status] || order.status,
+        deliveryCostAmount: order.deliveryCostAmount ? Number(order.deliveryCostAmount) : null,
+        currency: order.currency || 'RUB',
+        updatedAt: order.updatedAt.toISOString().slice(0, 19).replace('T', ' '),
+      };
+
+      const { exported, updated } = await client.exportOrders([syncRecord]);
+
+      logger.info(
+        {
+          event: 'GOOGLE_SHEETS_ORDER_SYNCED',
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          status: order.status,
+          exported: exported > 0,
+          updated: updated > 0,
+        },
+        'Single order synchronized to Google Sheets'
+      );
+
+      return {
+        success: true,
+        exported: exported > 0,
+        updated: updated > 0,
+      };
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err.message : String(err);
+      logger.error(
+        {
+          event: 'GOOGLE_SHEETS_ORDER_SYNC_FAILED',
+          orderId,
+          error,
+        },
+        'Failed to sync single order to Google Sheets'
+      );
+      return { success: false, error };
+    }
   }
 }

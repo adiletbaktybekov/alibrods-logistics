@@ -392,7 +392,7 @@ export class TelegramNotificationService {
         process.env.VERCEL_ENV === 'preview' ||
         process.env.STAGING === 'true');
 
-    if (process.env.TELEGRAM_ENABLE_GROUP_NOTIFICATIONS === 'false' && !isStagingEnv) {
+    if (process.env.TELEGRAM_ENABLE_GROUP_NOTIFICATIONS === 'false') {
       logger.info(
         { event: 'TELEGRAM_GROUP_NOTIFICATION_SKIPPED', reason: 'GROUP_NOTIFICATIONS_DISABLED', eventType, orderId: payload.orderId },
         'Group notifications disabled via config'
@@ -400,24 +400,29 @@ export class TelegramNotificationService {
       return { sent: false, skippedReason: 'GROUP_NOTIFICATIONS_DISABLED' };
     }
 
-    // 3. Determine target group chat ID & topic ID based on environment
+    // 3. Determine target group chat ID & topic ID based on explicit configuration and environment
+    const explicitGroupChatId =
+      process.env.TELEGRAM_MANAGER_GROUP_CHAT_ID ||
+      process.env.TELEGRAM_GROUP_CHAT_ID;
+    const explicitGroupTopicId =
+      process.env.TELEGRAM_MANAGER_GROUP_TOPIC_ID ||
+      process.env.TELEGRAM_GROUP_TOPIC_ID;
+
     let groupChatId: string | undefined;
     let groupTopicId: string | undefined;
 
-    if (isStagingEnv) {
-      // Staging / Preview MUST ALWAYS route to AliBros Staging Test (-1004425588766) without topic
+    if (explicitGroupChatId) {
+      // Explicit environment variable takes highest priority
+      groupChatId = explicitGroupChatId;
+      groupTopicId = explicitGroupTopicId;
+    } else if (isStagingEnv) {
+      // Staging / Preview fallback: AliBros Staging Test (-1004425588766) without topic
       groupChatId = '-1004425588766';
       groupTopicId = undefined;
     } else {
-      // Production routes to AliBros Биримдик (-1003893397086), topic 8 («Отгрузка»)
-      groupChatId =
-        process.env.TELEGRAM_MANAGER_GROUP_CHAT_ID ||
-        process.env.TELEGRAM_GROUP_CHAT_ID ||
-        (process.env.NODE_ENV === 'test' ? undefined : '-1003893397086');
-      groupTopicId =
-        process.env.TELEGRAM_MANAGER_GROUP_TOPIC_ID ||
-        process.env.TELEGRAM_GROUP_TOPIC_ID ||
-        (process.env.NODE_ENV === 'test' ? undefined : '8');
+      // Production fallback: AliBros Биримдик (-1003893397086), topic 8 («Отгрузка»)
+      groupChatId = process.env.NODE_ENV === 'test' ? undefined : '-1003893397086';
+      groupTopicId = process.env.NODE_ENV === 'test' ? undefined : '8';
     }
 
     if (!groupChatId) {

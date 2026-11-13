@@ -1,8 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { SHEET_HEADERS, GoogleSheetsClient, resetGoogleSheetsClient } from '@/integrations/google-sheets/client';
 import { OrdersService } from '@/modules/orders/orders.service';
 import { GoogleSheetsSyncService } from '@/modules/integrations/google-sheets-sync.service';
 import { AuthenticatedUser } from '@/types/rbac';
+import { prisma } from '@/database/prisma';
+import { OrderStatus } from '@prisma/client';
 
 describe('Google Sheets Integration & Accounting Sync', () => {
   const accountantUser: AuthenticatedUser = {
@@ -134,6 +136,88 @@ describe('Google Sheets Integration & Accounting Sync', () => {
         }
         resetGoogleSheetsClient();
       }
+    });
+
+    it('should skip CREATED orders from syncing to Google Sheets', async () => {
+      process.env.DATABASE_URL = 'postgresql://mock:mock@localhost:5432/mock';
+      vi.spyOn(GoogleSheetsClient.prototype, 'isConfigured').mockReturnValue(true);
+
+      vi.spyOn(prisma.order, 'findUnique').mockResolvedValueOnce({
+        id: 'order-created-1',
+        orderNumber: 'AB-2026-CREATED',
+        status: OrderStatus.CREATED,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        totalBoxesCount: 5,
+        totalPalletsCount: 0,
+        client: { companyName: 'Тест Клиент' },
+        warehouse: { name: 'Коледино' },
+      } as any);
+
+      const res = await GoogleSheetsSyncService.syncOrder('order-created-1');
+      expect(res.success).toBe(false);
+      expect(res.skippedReason).toBe('ORDER_NOT_CONFIRMED');
+    });
+
+    it('should export CONFIRMED order to Google Sheets successfully', async () => {
+      process.env.DATABASE_URL = 'postgresql://mock:mock@localhost:5432/mock';
+      vi.spyOn(GoogleSheetsClient.prototype, 'isConfigured').mockReturnValue(true);
+
+      vi.spyOn(prisma.order, 'findUnique').mockResolvedValueOnce({
+        id: 'order-confirmed-1',
+        orderNumber: 'AB-2026-CONFIRMED',
+        status: OrderStatus.CONFIRMED,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        scheduledPickupAt: new Date(),
+        totalBoxesCount: 10,
+        totalPalletsCount: 1,
+        deliveryCostAmount: null,
+        currency: 'RUB',
+        client: { companyName: 'ООО Селлер', contactPerson: 'Иван', contactPhone: '+79991112233' },
+        warehouse: { name: 'Хоругвино' },
+      } as any);
+
+      const exportOrdersSpy = vi.spyOn(GoogleSheetsClient.prototype, 'exportOrders').mockResolvedValueOnce({
+        exported: 1,
+        updated: 0,
+      });
+
+      const res = await GoogleSheetsSyncService.syncOrder('order-confirmed-1');
+      expect(res.success).toBe(true);
+      expect(res.exported).toBe(true);
+      expect(exportOrdersSpy).toHaveBeenCalledTimes(1);
+
+      const syncPayload = exportOrdersSpy.mock.calls[0][0][0];
+      expect(syncPayload.orderId).toBe('order-confirmed-1');
+      expect(syncPayload.orderNumber).toBe('AB-2026-CONFIRMED');
+      expect(syncPayload.warehouseName).toBe('Хоругвино');
+      expect(syncPayload.status).toBe('Подтверждена');
+    });
+
+    it('should handle Google Sheets export failure gracefully without throwing', async () => {
+      process.env.DATABASE_URL = 'postgresql://mock:mock@localhost:5432/mock';
+      vi.spyOn(GoogleSheetsClient.prototype, 'isConfigured').mockReturnValue(true);
+
+      vi.spyOn(prisma.order, 'findUnique').mockResolvedValueOnce({
+        id: 'order-confirmed-err',
+        orderNumber: 'AB-2026-ERR',
+        status: OrderStatus.CONFIRMED,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        totalBoxesCount: 2,
+        totalPalletsCount: 0,
+        client: { companyName: 'Тест' },
+        warehouse: { name: 'Коледино' },
+      } as any);
+
+      vi.spyOn(GoogleSheetsClient.prototype, 'exportOrders').mockRejectedValueOnce(
+        new Error('Google API quota exceeded')
+      );
+
+      const res = await GoogleSheetsSyncService.syncOrder('order-confirmed-err');
+      expect(res.success).toBe(false);
+      expect(res.error).toBe('Google API quota exceeded');
     });
   });
 });

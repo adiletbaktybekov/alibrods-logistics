@@ -5,7 +5,14 @@ import { OrderStatus, NotificationType, NotificationChannel, AssignmentStatus } 
 import { STATUS_LABELS } from '@/components/ui/status-badge';
 import { NotificationsService } from './notifications.service';
 import { TelegramNotificationService, TelegramGroupEventType } from '@/modules/telegram/notification.service';
+import { GoogleSheetsSyncService } from '@/modules/integrations/google-sheets-sync.service';
 import { isWarehouseOpenOnDate, CONFIRMED_WAREHOUSES } from '@/modules/warehouses/warehouses.service';
+
+export interface DriverNotificationDispatchResult {
+  sent: boolean;
+  reason?: string;
+  warning?: string;
+}
 
 export class NotificationDispatcherService {
   /**
@@ -189,13 +196,14 @@ export class NotificationDispatcherService {
   }
 
   /**
-   * Notifies a driver via DM and notifies manager group when an order is assigned.
+   * Dispatches notifications when a driver is assigned or reassigned to an order.
+   * Returns dispatch status and user-facing warning if personal driver message could not be delivered.
    */
   public static async notifyDriverOrderAssigned(
     orderId: string,
     driverProfileId: string
-  ): Promise<boolean> {
-    if (!process.env.DATABASE_URL) return false;
+  ): Promise<DriverNotificationDispatchResult> {
+    if (!process.env.DATABASE_URL) return { sent: false, reason: 'DATABASE_NOT_CONFIGURED' };
 
     try {
       const [order, driver] = await Promise.all([
@@ -226,7 +234,7 @@ export class NotificationDispatcherService {
         }),
       ]);
 
-      if (!order || !driver) return false;
+      if (!order || !driver) return { sent: false, reason: 'ORDER_OR_DRIVER_NOT_FOUND' };
 
       // 1. Queue in-app notification for driver
       await NotificationsService.queue({
@@ -285,11 +293,21 @@ export class NotificationDispatcherService {
       // 4. Send personal Telegram message to driver via Driver Bot
       const tgAccount = driver.user?.telegramAccount;
       if (!tgAccount || !tgAccount.telegramId) {
-        logger.info(
-          { driverProfileId },
-          'Driver has no linked Telegram account. Skipping Telegram DM dispatch.'
+        logger.warn(
+          {
+            event: 'DRIVER_NOTIFICATION_SKIPPED',
+            orderId: order.id,
+            orderNumber: order.orderNumber,
+            driverProfileId,
+            reason: 'NO_LINKED_TELEGRAM',
+          },
+          'Driver has no linked Telegram account. Skipping Driver Bot card dispatch.'
         );
-        return false;
+        return {
+          sent: false,
+          reason: 'NO_LINKED_TELEGRAM',
+          warning: `У водителя ${driver.fullName} не привязан Telegram. Карточка заявки в Driver Bot не доставлена.`,
+        };
       }
 
       const client = getDriverTelegramBotClient();
@@ -327,15 +345,70 @@ export class NotificationDispatcherService {
         ],
       };
 
-      return await client.sendMessageWithRetry({
+      const sent = await client.sendMessageWithRetry({
         chatId: tgAccount.telegramId.toString(),
         text,
         parseMode: 'HTML',
         replyMarkup,
       });
+
+      if (!sent) {
+        const lastErr = client.lastError;
+        let warning = `Не удалось доставить карточку заявки водителю ${driver.fullName} в Driver Bot.`;
+        let reason = 'TELEGRAM_SEND_FAILED';
+
+        if (lastErr?.errorCode === 403 || lastErr?.description?.toLowerCase().includes('blocked')) {
+          reason = 'BOT_BLOCKED_BY_DRIVER';
+          warning = `Водитель ${driver.fullName} заблокировал Driver Bot. Карточка заявки не доставлена.`;
+        } else if (
+          lastErr?.errorCode === 400 ||
+          lastErr?.description?.toLowerCase().includes('chat not found')
+        ) {
+          reason = 'CHAT_NOT_FOUND_NOT_STARTED';
+          warning = `Водитель ${driver.fullName} ещё не запустил Driver Bot (/start). Карточка заявки не доставлена.`;
+        }
+
+        logger.warn(
+          {
+            event: 'DRIVER_NOTIFICATION_FAILED',
+            orderId: order.id,
+            orderNumber: order.orderNumber,
+            driverProfileId,
+            driverTelegramId: tgAccount.telegramId.toString(),
+            reason,
+            httpStatus: lastErr?.httpStatus,
+            errorCode: lastErr?.errorCode,
+            description: lastErr?.description,
+          },
+          'Driver Bot failed to deliver order card to driver'
+        );
+
+        return {
+          sent: false,
+          reason,
+          warning,
+        };
+      }
+
+      logger.info(
+        {
+          event: 'DRIVER_NOTIFICATION_SENT',
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          driverProfileId,
+          driverTelegramId: tgAccount.telegramId.toString(),
+        },
+        'Driver Bot successfully delivered order card to driver'
+      );
+
+      return { sent: true };
     } catch (err: unknown) {
       safeLogError(err, 'Error in notifyDriverOrderAssigned');
-      return false;
+      return {
+        sent: false,
+        reason: 'UNEXPECTED_ERROR',
+        warning: 'Внутренняя ошибка при отправке уведомления водителю',
+      };
     }
   }
 
@@ -519,10 +592,15 @@ export class NotificationDispatcherService {
         }).catch((e) => safeLogError(e, 'Failed to dispatch status change group notification'));
       }
 
-      logger.info(
+        logger.info(
         { orderId, fromStatus, toStatus, changedByUserId },
         'Dispatched status change notifications'
       );
+
+      // 4. Synchronize status change to Google Sheets (Safe non-blocking)
+      GoogleSheetsSyncService.syncOrder(orderId).catch((sheetsErr) => {
+        logger.error({ err: sheetsErr, orderId, toStatus }, 'Failed to sync status change to Google Sheets');
+      });
     } catch (err: unknown) {
       safeLogError(err, 'Error in notifyStatusChanged');
     }

@@ -166,10 +166,16 @@ export async function assignDriverAction(
 ) {
   const user = await requireStaffUser();
   try {
-    await OrdersService.assignDriver(user, orderId, { driverProfileId, notes });
+    const assignment = await OrdersService.assignDriver(user, orderId, { driverProfileId, notes });
     revalidatePath(`/admin/orders/${orderId}`);
     revalidatePath('/admin/orders');
-    return { success: true };
+    return {
+      success: true,
+      warning:
+        'notificationWarning' in assignment && typeof assignment.notificationWarning === 'string'
+          ? assignment.notificationWarning
+          : undefined,
+    };
   } catch (err: unknown) {
     return {
       success: false,

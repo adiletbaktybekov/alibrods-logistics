@@ -145,7 +145,11 @@ export function OrderActions({
         assignmentNotes.trim() || undefined
       );
       if (res.success) {
-        setActionSuccess('Водитель успешно назначен на заявку');
+        if (res.warning) {
+          setActionSuccess(`Водитель назначен. ⚠️ ${res.warning}`);
+        } else {
+          setActionSuccess('Водитель успешно назначен на заявку');
+        }
         router.refresh();
       } else {
         setActionError(res.error || 'Не удалось назначить водителя');

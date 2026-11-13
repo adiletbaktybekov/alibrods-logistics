@@ -17,6 +17,7 @@ import { logger } from '@/lib/logger';
 import { AuditService } from '@/modules/audit/audit.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { TelegramNotificationService } from './notification.service';
+import { GoogleSheetsSyncService } from '@/modules/integrations/google-sheets-sync.service';
 
 export interface TelegramIncomingUpdate {
   update_id: number;
@@ -678,7 +679,14 @@ export class TelegramBotService {
       // 6a. Answer callback query
       await managerBot.answerCallbackQuery(cb.id, '✅ Заявка подтверждена и опубликована в группе!');
 
-      // 6b. Dispatch ORDER_CONFIRMED to the shipping group
+      // 6b. Sync confirmed order to Google Sheets (Safe non-blocking)
+      try {
+        await GoogleSheetsSyncService.syncOrder(processedOrder.id);
+      } catch (sheetsErr) {
+        logger.error({ err: sheetsErr, orderId: processedOrder.id }, 'Failed to sync confirmed order to Google Sheets');
+      }
+
+      // 6c. Dispatch ORDER_CONFIRMED to the shipping group
       try {
         const groupRes = await TelegramNotificationService.notifyGroupEvent('ORDER_CONFIRMED', {
           orderId: processedOrder.id,
