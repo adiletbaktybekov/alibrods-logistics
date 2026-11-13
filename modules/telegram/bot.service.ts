@@ -594,7 +594,7 @@ export class TelegramBotService {
         });
 
         return { outcome: 'SUCCESS', currentStatus: targetStatus, order };
-      });
+      }, { timeout: 15000, maxWait: 10000 });
     } catch (err: unknown) {
       logger.error({ err, orderId, action, tgId }, 'Database error during manager approval callback');
       await managerBot.answerCallbackQuery(cb.id, '❌ Произошла ошибка базы данных при обработке заявки.', true);
