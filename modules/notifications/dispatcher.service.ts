@@ -17,7 +17,18 @@ export class NotificationDispatcherService {
     try {
       const order = await prisma.order.findUnique({
         where: { id: orderId },
-        include: { warehouse: true, client: true },
+        include: {
+          warehouse: true,
+          client: {
+            include: {
+              user: {
+                include: {
+                  telegramAccount: true,
+                },
+              },
+            },
+          },
+        },
       });
 
       if (!order) {
@@ -32,6 +43,37 @@ export class NotificationDispatcherService {
         marketplace: order.marketplace,
         warehouseName: order.warehouse.name,
       });
+
+      // 1. Notify Client via Client Bot (@AliBrosClientBot) if linked
+      const clientTg = order.client?.user?.telegramAccount;
+      if (clientTg?.telegramId) {
+        const clientBot = getClientTelegramBotClient();
+        const pickupDateStr = order.scheduledPickupAt
+          ? new Date(order.scheduledPickupAt).toLocaleDateString('ru-RU')
+          : 'не указана';
+        const cargoStr =
+          order.totalPalletsCount > 0
+            ? `${order.totalPalletsCount} палл. (${order.totalBoxesCount} кор.)`
+            : `${order.totalBoxesCount} кор.`;
+
+        const clientMsg = [
+          `📦 <b>Ваша заявка принята и отправлена на согласование!</b>`,
+          ``,
+          `Номер заявки: <code>#${order.orderNumber}</code>`,
+          `Маркетплейс: <b>${order.marketplace}</b>`,
+          `Склад назначения: <b>${order.warehouse.name}</b>`,
+          `Планируемая дата: <b>${pickupDateStr}</b>`,
+          `Объём поставки: <b>${cargoStr}</b>`,
+          ``,
+          `<i>Заявка передана менеджерам AliBros Logistics. Мы сразу уведомим вас о результатах согласования и назначении водителя.</i>`,
+        ].join('\n');
+
+        await clientBot.sendMessageWithRetry({
+          chatId: clientTg.telegramId.toString(),
+          text: clientMsg,
+          parseMode: 'HTML',
+        }).catch((e) => logger.warn({ err: e }, 'Failed to dispatch order created client notification'));
+      }
 
       const confirmedWh = CONFIRMED_WAREHOUSES.find(
         (c) => c.id === order.warehouseId || c.code === order.warehouse.code
@@ -161,7 +203,15 @@ export class NotificationDispatcherService {
           where: { id: orderId },
           include: {
             warehouse: true,
-            client: true,
+            client: {
+              include: {
+                user: {
+                  include: {
+                    telegramAccount: true,
+                  },
+                },
+              },
+            },
           },
         }),
         prisma.driverProfile.findUnique({
@@ -200,7 +250,39 @@ export class NotificationDispatcherService {
         driverName: driver.fullName,
       }).catch((e) => safeLogError(e, 'Failed to dispatch DRIVER_ASSIGNED group notification'));
 
-      // 3. Send personal Telegram message to driver via Driver Bot
+      // 3. Notify Client via Client Bot
+      const clientTg = order.client?.user?.telegramAccount;
+      if (clientTg?.telegramId) {
+        const clientBot = getClientTelegramBotClient();
+        const driverDetails = [
+          `Водитель: <b>${driver.fullName}</b>`,
+          driver.user?.phone ? `Телефон: <code>${driver.user.phone}</code>` : '',
+          driver.vehicleModel || driver.vehiclePlateNumber
+            ? `Автомобиль: <b>${driver.vehicleModel || ''} ${driver.vehiclePlateNumber ? `(${driver.vehiclePlateNumber})` : ''}</b>`.trim()
+            : '',
+        ]
+          .filter(Boolean)
+          .join('\n');
+
+        const clientText = [
+          `🚛 <b>На вашу заявку назначен водитель!</b>`,
+          ``,
+          `Заявка: <code>#${order.orderNumber}</code>`,
+          `Склад: <b>${order.warehouse.name}</b> (${order.marketplace})`,
+          ``,
+          driverDetails,
+          ``,
+          `<i>Водитель прибудет по адресу забора груза в согласованное время.</i>`,
+        ].join('\n');
+
+        await clientBot.sendMessageWithRetry({
+          chatId: clientTg.telegramId.toString(),
+          text: clientText,
+          parseMode: 'HTML',
+        }).catch((e) => logger.warn({ err: e }, 'Failed to dispatch driver assignment to client bot'));
+      }
+
+      // 4. Send personal Telegram message to driver via Driver Bot
       const tgAccount = driver.user?.telegramAccount;
       if (!tgAccount || !tgAccount.telegramId) {
         logger.info(
@@ -375,13 +457,28 @@ export class NotificationDispatcherService {
         // 2. Notify Client via Client Bot
         const clientTg = order.client.user?.telegramAccount;
         if (clientTg?.telegramId) {
+          const statusDescriptions: Partial<Record<OrderStatus, string>> = {
+            [OrderStatus.ACCEPTED_BY_DRIVER]: 'Водитель принял рейс в работу и выехал на забор груза.',
+            [OrderStatus.PICKED_UP]: 'Груз забран у селлера. Подготовка к транспортировке на склад.',
+            [OrderStatus.IN_TRANSIT]: `Машина с грузом в пути на склад маркетплейса (${order.warehouse.name}).`,
+            [OrderStatus.DELIVERED_TO_WAREHOUSE]: `Груз доставлен на склад маркетплейса (${order.warehouse.name}). Ожидание разгрузки.`,
+            [OrderStatus.ACCEPTED_BY_MARKETPLACE]: 'Партия успешно сдана и принята маркетплейсом на воротах склада!',
+            [OrderStatus.COMPLETED]: 'Услуга доставки оказана в полном объёме. Заявка закрыта.',
+            [OrderStatus.REJECTED_BY_MANAGER]: comment ? `Заявка отклонена: ${comment}` : 'Заявка отклонена менеджером.',
+          };
+
+          const extraStatusNote = statusDescriptions[toStatus] || comment || '';
+
           const clientMsg = [
             `📦 <b>Статус доставки обновлён</b>`,
             ``,
-            `Заявка: <code>${order.orderNumber}</code>`,
-            `Склад: <b>${order.warehouse.name}</b>`,
-            `Текущий статус: <b>${newStatusLabel}</b>`,
-          ].join('\n');
+            `Заявка: <code>#${order.orderNumber}</code>`,
+            `Склад назначения: <b>${order.warehouse.name}</b> (${order.marketplace})`,
+            `Новый статус: <b>${newStatusLabel}</b>`,
+            extraStatusNote ? `\n<i>${extraStatusNote}</i>` : '',
+          ]
+            .filter(Boolean)
+            .join('\n');
 
           const clientBot = getClientTelegramBotClient();
           await clientBot.sendMessageWithRetry({

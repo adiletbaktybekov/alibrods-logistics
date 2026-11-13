@@ -15,47 +15,79 @@ export interface DriverPhotoSession {
   expiresAt: Date;
 }
 
-// In-memory sessions for pending driver photo uploads
-// Key: driverProfileId
-const activePhotoSessions = new Map<string, DriverPhotoSession>();
-
 export class DriverPhotoService {
   /**
-   * Sets the active photo upload context for a driver (e.g., driver clicked "Send pickup photo").
+   * Sets the active photo upload context for a driver in PostgreSQL with a 15 min TTL.
+   * Ensures sessions persist across Vercel serverless containers.
    */
-  public static setPendingUploadSession(
+  public static async setPendingUploadSession(
     driverProfileId: string,
     orderId: string,
     photoType: PhotoType
-  ): void {
-    activePhotoSessions.set(driverProfileId, {
-      driverProfileId,
-      orderId,
-      photoType,
-      expiresAt: new Date(Date.now() + 15 * 60 * 1000), // 15 min TTL
+  ): Promise<void> {
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 min TTL
+
+    if (!process.env.DATABASE_URL) return;
+
+    await prisma.driverPhotoSession.upsert({
+      where: { driverProfileId },
+      create: {
+        driverProfileId,
+        orderId,
+        photoType,
+        expiresAt,
+      },
+      update: {
+        orderId,
+        photoType,
+        expiresAt,
+      },
     });
+
+    logger.info(
+      { driverProfileId, orderId, photoType, expiresAt },
+      'Persisted driver photo upload session in PostgreSQL'
+    );
   }
 
   /**
-   * Gets and validates active upload context for a driver.
+   * Gets and validates active upload context for a driver from PostgreSQL.
    */
-  public static getPendingUploadSession(driverProfileId: string): DriverPhotoSession | null {
-    const session = activePhotoSessions.get(driverProfileId);
+  public static async getPendingUploadSession(
+    driverProfileId: string
+  ): Promise<DriverPhotoSession | null> {
+    if (!process.env.DATABASE_URL) return null;
+
+    const session = await prisma.driverPhotoSession.findUnique({
+      where: { driverProfileId },
+    });
+
     if (!session) return null;
 
     if (session.expiresAt < new Date()) {
-      activePhotoSessions.delete(driverProfileId);
+      await prisma.driverPhotoSession.deleteMany({
+        where: { driverProfileId },
+      });
       return null;
     }
 
-    return session;
+    return {
+      driverProfileId: session.driverProfileId,
+      orderId: session.orderId,
+      photoType: session.photoType,
+      expiresAt: session.expiresAt,
+    };
   }
 
   /**
-   * Clears pending upload session.
+   * Clears pending upload session from PostgreSQL.
    */
-  public static clearPendingUploadSession(driverProfileId: string): void {
-    activePhotoSessions.delete(driverProfileId);
+  public static async clearPendingUploadSession(driverProfileId: string): Promise<void> {
+    if (!process.env.DATABASE_URL) return;
+
+    await prisma.driverPhotoSession.deleteMany({
+      where: { driverProfileId },
+    }).catch(() => {});
   }
 
   /**
@@ -349,17 +381,40 @@ export class DriverPhotoService {
       if (clientTg?.telegramId) {
         const { getClientTelegramBotClient } = await import('@/integrations/telegram/client');
         const clientBot = getClientTelegramBotClient();
-        await clientBot.sendMessageWithRetry({
-          chatId: clientTg.telegramId.toString(),
-          text: [
-            `📸 <b>Новый фотоотчёт по заявке</b>`,
-            ``,
-            `Заявка: <code>${order.orderNumber}</code>`,
-            `Тип: <b>${photoLabel}</b>`,
-            `Склад: <b>${order.warehouse?.name || ''}</b>`,
-          ].join('\n'),
-          parseMode: 'HTML',
-        }).catch((e) => logger.warn({ err: e }, 'Failed to notify client about photo'));
+
+        let signedUrl: string | null = null;
+        try {
+          signedUrl = await storage.getSignedDownloadUrl(fileKey, 86400);
+        } catch {
+          // non-blocking presigned url error
+        }
+
+        const photoCaption = [
+          `📸 <b>Новый фотоотчёт по вашей доставке</b>`,
+          ``,
+          `Заявка: <code>${order.orderNumber}</code>`,
+          `Этап: <b>${photoLabel}</b>`,
+          `Склад: <b>${order.warehouse?.name || ''}</b> (${order.marketplace})`,
+          driver?.fullName ? `Водитель: <b>${driver.fullName}</b>` : '',
+        ].filter(Boolean).join('\n');
+
+        let sentPhoto = false;
+        if (signedUrl) {
+          sentPhoto = await clientBot.sendPhotoWithRetry({
+            chatId: clientTg.telegramId.toString(),
+            photo: signedUrl,
+            caption: photoCaption,
+            parseMode: 'HTML',
+          }).catch(() => false);
+        }
+
+        if (!sentPhoto) {
+          await clientBot.sendMessageWithRetry({
+            chatId: clientTg.telegramId.toString(),
+            text: photoCaption,
+            parseMode: 'HTML',
+          }).catch((e) => logger.warn({ err: e }, 'Failed to notify client about photo'));
+        }
       }
     } catch (notifErr) {
       logger.warn({ notifErr }, 'Non-blocking notification error on photo upload');

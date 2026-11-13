@@ -775,7 +775,9 @@ export class TelegramBotService {
               `Заявка: <code>#${processedOrder.orderNumber}</code>`,
               `Склад: <b>${processedOrder.warehouse.name}</b> (${processedOrder.marketplace})`,
               `Статус: <b>Отклонена менеджером</b>.`,
-              `При необходимости свяжитесь со службой поддержки AliBros.`,
+              `Причина: <i>Параметры поставки не соответствуют регламенту или склад маркетплейса временно недоступен.</i>`,
+              ``,
+              `<i>Вы можете скорректировать заявку в личном кабинете или обратиться к менеджеру поддержки.</i>`,
             ].join('\n'),
             parseMode: 'HTML',
           }).catch(() => {});
@@ -1163,7 +1165,7 @@ export class TelegramBotService {
         const photoType =
           category === 'wh' ? PhotoType.WAREHOUSE_ACCEPTANCE : PhotoType.CARGO_PICKUP;
 
-        DriverPhotoService.setPendingUploadSession(driverProfileId, targetOrderId, photoType);
+        await DriverPhotoService.setPendingUploadSession(driverProfileId, targetOrderId, photoType);
 
         const label =
           photoType === PhotoType.CARGO_PICKUP
@@ -1195,7 +1197,7 @@ export class TelegramBotService {
     msg: NonNullable<TelegramIncomingUpdate['message']>
   ): Promise<void> {
     const client = getDriverTelegramBotClient();
-    const session = DriverPhotoService.getPendingUploadSession(driverProfileId);
+    const session = await DriverPhotoService.getPendingUploadSession(driverProfileId);
 
     if (!session) {
       await client.sendMessage({
@@ -1233,7 +1235,7 @@ export class TelegramBotService {
         fileBuffer,
       });
 
-      DriverPhotoService.clearPendingUploadSession(driverProfileId);
+      await DriverPhotoService.clearPendingUploadSession(driverProfileId);
 
       await client.sendMessage({
         chatId: tgId,

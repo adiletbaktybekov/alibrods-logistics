@@ -16,6 +16,15 @@ export interface EditTelegramMessageOptions {
   replyMarkup?: unknown;
 }
 
+export interface SendTelegramPhotoOptions {
+  chatId: number | string;
+  photo: string;
+  caption?: string;
+  parseMode?: 'HTML' | 'MarkdownV2' | 'Markdown';
+  replyMarkup?: unknown;
+  messageThreadId?: number | string;
+}
+
 export class TelegramBotClient {
   private readonly botToken: string;
   private readonly baseUrl: string;
@@ -100,6 +109,73 @@ export class TelegramBotClient {
     let attempt = 0;
     while (attempt <= maxRetries) {
       const success = await this.sendMessage(options);
+      if (success) return true;
+      attempt++;
+      if (attempt <= maxRetries) {
+        await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+      }
+    }
+    return false;
+  }
+
+  public async sendPhoto(options: SendTelegramPhotoOptions): Promise<boolean> {
+    if (!this.botToken) {
+      logger.warn({
+        event: 'TELEGRAM_API_ERROR',
+        description: 'Telegram bot token not configured. Skipping sendPhoto.',
+        chatId: options.chatId,
+      });
+      return false;
+    }
+
+    try {
+      const response = await fetch(`${this.baseUrl}/sendPhoto`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: options.chatId,
+          photo: options.photo,
+          caption: options.caption,
+          parse_mode: options.parseMode || 'HTML',
+          reply_markup: options.replyMarkup,
+          ...(options.messageThreadId !== undefined && options.messageThreadId !== null
+            ? { message_thread_id: Number(options.messageThreadId) }
+            : {}),
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        logger.error({
+          event: 'TELEGRAM_API_ERROR',
+          httpStatus: response.status,
+          errorCode: data?.error_code,
+          description: data?.description || 'Telegram API returned non-OK response for sendPhoto',
+          chatId: options.chatId,
+        });
+        return false;
+      }
+
+      this.lastSentMessageId = data.result?.message_id;
+      return true;
+    } catch (err) {
+      logger.error({
+        event: 'TELEGRAM_API_ERROR',
+        httpStatus: 0,
+        description: err instanceof Error ? err.message : 'Network error while contacting Telegram API for sendPhoto',
+        chatId: options.chatId,
+      });
+      return false;
+    }
+  }
+
+  public async sendPhotoWithRetry(
+    options: SendTelegramPhotoOptions,
+    maxRetries = 2
+  ): Promise<boolean> {
+    let attempt = 0;
+    while (attempt <= maxRetries) {
+      const success = await this.sendPhoto(options);
       if (success) return true;
       attempt++;
       if (attempt <= maxRetries) {

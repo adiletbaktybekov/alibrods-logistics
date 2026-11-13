@@ -175,8 +175,9 @@ model DriverProfile {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  assignments OrderAssignment[]
+  user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignments   OrderAssignment[]
+  photoSessions DriverPhotoSession[]
 
   @@index([userId])
   @@index([isAvailable])
@@ -311,6 +312,7 @@ model Order {
   assignments         OrderAssignment[]
   statusHistory       OrderStatusHistory[]
   photos              OrderPhoto[]
+  photoSessions       DriverPhotoSession[]
 
   @@index([orderNumber])
   @@index([clientId])
@@ -529,3 +531,21 @@ model RateLimitEntry {
   @@index([expiresAt])
   @@map("rate_limit_entries")
 }
+
+model DriverPhotoSession {
+  id              String        @id @default(uuid())
+  driverProfileId String        @unique
+  orderId         String
+  photoType       PhotoType
+  expiresAt       DateTime
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  driverProfile   DriverProfile @relation(fields: [driverProfileId], references: [id], onDelete: Cascade)
+  order           Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([driverProfileId])
+  @@index([expiresAt])
+  @@map("driver_photo_sessions")
+}
+
