@@ -32,8 +32,8 @@ describe('Local Telegram Notification & Driver Dispatch Verification', () => {
     if (originalDatabaseUrl !== undefined) process.env.DATABASE_URL = originalDatabaseUrl;
     else delete process.env.DATABASE_URL;
 
-    if (originalNodeEnv !== undefined) process.env.NODE_ENV = originalNodeEnv;
-    else delete process.env.NODE_ENV;
+    if (originalNodeEnv !== undefined) (process.env as any).NODE_ENV = originalNodeEnv;
+    else delete (process.env as any).NODE_ENV;
 
     if (originalChatId !== undefined) process.env.TELEGRAM_MANAGER_GROUP_CHAT_ID = originalChatId;
     else delete process.env.TELEGRAM_MANAGER_GROUP_CHAT_ID;
@@ -62,7 +62,7 @@ describe('Local Telegram Notification & Driver Dispatch Verification', () => {
   describe('Problem 1: Group Routing Priority and Message Thread ID', () => {
     it('routes ORDER_CONFIRMED strictly to topic 8 of -1003893397086 even on Neon DB URL', async () => {
       // Simulate local development environment with Neon staging database
-      process.env.NODE_ENV = 'development';
+      (process.env as any).NODE_ENV = 'development';
       process.env.DATABASE_URL = 'postgresql://neondb_owner:secret@ep-restless-wave-b9k0ye9q-pooler.c-7.eu-central-1.aws.neon.tech/neondb';
       process.env.TELEGRAM_ENABLE_GROUP_NOTIFICATIONS = 'true';
       process.env.TELEGRAM_MANAGER_GROUP_CHAT_ID = '-1003893397086';
@@ -102,7 +102,7 @@ describe('Local Telegram Notification & Driver Dispatch Verification', () => {
       delete process.env.TELEGRAM_GROUP_CHAT_ID;
       delete process.env.TELEGRAM_MANAGER_GROUP_TOPIC_ID;
       delete process.env.TELEGRAM_GROUP_TOPIC_ID;
-      process.env.NODE_ENV = 'development';
+      (process.env as any).NODE_ENV = 'development';
       process.env.DATABASE_URL = 'postgresql://neondb_owner:secret@ep-restless-wave-b9k0ye9q-pooler.c-7.eu-central-1.aws.neon.tech/neondb';
       process.env.TELEGRAM_ENABLE_GROUP_NOTIFICATIONS = 'true';
       process.env.TELEGRAM_MANAGER_BOT_TOKEN = 'mock-manager-bot-token';

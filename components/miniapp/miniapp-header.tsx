@@ -2,14 +2,14 @@
 
 import * as React from 'react';
 import Link from 'next/link';
+import { AliBrosLogo } from '@/components/ui/logo';
 
 export function MiniAppHeader({ title, subtitle }: { title?: string; subtitle?: string }) {
   return (
     <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-100 px-4 py-3 flex items-center justify-between">
       <div className="flex items-center gap-2.5">
-        <div className="w-7 h-7 rounded-lg bg-brand-600 flex items-center justify-center text-white text-xs font-black shadow-xs">
-          AB
-        </div>
+        <AliBrosLogo variant="icon" className="h-7 w-7" />
+
         <div>
           <h1 className="text-sm font-bold text-slate-900 leading-tight">
             {title || 'AliBros Logistics'}

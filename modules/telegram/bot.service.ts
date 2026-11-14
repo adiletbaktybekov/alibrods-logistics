@@ -18,6 +18,7 @@ import { AuditService } from '@/modules/audit/audit.service';
 import { NotificationsService } from '@/modules/notifications/notifications.service';
 import { TelegramNotificationService } from './notification.service';
 import { GoogleSheetsSyncService } from '@/modules/integrations/google-sheets-sync.service';
+import { getCanonicalAppUrl } from '@/config/site';
 
 export interface TelegramIncomingUpdate {
   update_id: number;
@@ -159,7 +160,7 @@ export class TelegramBotService {
       const msg = update.message;
       const tgId = msg.from.id;
       const text = msg.text?.trim() || '';
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://alibros.com';
+      const appUrl = getCanonicalAppUrl();
 
       // 1. Check if client sent pairing code, e.g. "/start ABL-123456" or "ABL-123456"
       let pairingCode: string | null = null;
@@ -350,7 +351,7 @@ export class TelegramBotService {
       const msg = update.message;
       const tgId = msg.from.id;
       const text = msg.text?.trim() || '';
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://alibros.com';
+      const appUrl = getCanonicalAppUrl();
 
       logger.info({
         event: 'MANAGER_BOT_UPDATE_RECEIVED',
@@ -853,7 +854,7 @@ export class TelegramBotService {
     }
 
     // Default welcome for unlinked user with Mini App button for sellers
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://alibros.com';
+    const appUrl = getCanonicalAppUrl();
 
     await client.sendMessage({
       chatId: tgId,

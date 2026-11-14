@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { logoutAction } from '@/app/actions/auth';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { AliBrosLogo } from '@/components/ui/logo';
 
 interface ClientHeaderProps {
   user: {
@@ -34,19 +35,7 @@ export function ClientHeader({ user, client }: ClientHeaderProps) {
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
         {/* Brand Logo */}
         <div className="flex items-center gap-8">
-          <Link href="/dashboard" className="flex items-center gap-2">
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-600 text-white font-black text-lg shadow-sm">
-              AB
-            </span>
-            <div className="flex flex-col">
-              <span className="text-base font-bold text-slate-900 tracking-tight leading-none">
-                AliBros Logistics
-              </span>
-              <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">
-                Кабинет клиента
-              </span>
-            </div>
-          </Link>
+          <AliBrosLogo variant="compact" href="/dashboard" priority className="h-10" />
 
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center space-x-1">

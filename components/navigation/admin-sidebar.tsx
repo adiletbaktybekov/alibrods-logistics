@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { UserRole } from '@prisma/client';
+import { AliBrosLogo } from '@/components/ui/logo';
 
 interface AdminSidebarProps {
   user: {
@@ -101,12 +102,7 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
     <>
       {/* Mobile Topbar */}
       <div className="lg:hidden sticky top-0 z-40 flex h-16 w-full items-center justify-between border-b border-slate-800 bg-slate-900 px-4 text-white">
-        <Link href="/admin" className="flex items-center gap-2">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-500 font-extrabold text-white text-sm">
-            AB
-          </span>
-          <span className="font-bold text-sm tracking-tight text-white">AliBros Admin</span>
-        </Link>
+        <AliBrosLogo variant="full" theme="dark" href="/admin" className="h-8" />
         <button
           onClick={() => setMobileOpen(!mobileOpen)}
           className="p-2 text-slate-300 hover:text-white focus:outline-none"
@@ -137,18 +133,8 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
         )}
       >
         {/* Brand */}
-        <div className="flex h-16 items-center gap-3 border-b border-slate-800 px-6">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-500 text-white font-extrabold text-base shadow-sm">
-            AB
-          </span>
-          <div className="flex flex-col">
-            <span className="text-base font-bold text-white tracking-tight leading-tight">
-              AliBros Logistics
-            </span>
-            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest">
-              Панель управления
-            </span>
-          </div>
+        <div className="flex h-16 items-center border-b border-slate-800 px-5">
+          <AliBrosLogo variant="full" theme="dark" href="/admin" className="h-9" />
         </div>
 
         {/* User Card */}

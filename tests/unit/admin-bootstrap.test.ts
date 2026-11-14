@@ -1,4 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env.local' });
 import { validatePasswordComplexity } from '@/lib/security/password';
 import { validatePasswordComplexity as validateAdminPassword, verifyTargetDatabase } from '../../scripts/init-admin';
 import { UserRole } from '@prisma/client';
