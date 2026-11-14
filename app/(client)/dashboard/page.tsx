@@ -108,8 +108,8 @@ export default async function DashboardPage() {
                       </Link>
                     </TableCell>
                     <TableCell>
-                      <div className="font-medium text-slate-900">{order.warehouse.name}</div>
-                      <div className="text-xs text-slate-500">{order.warehouse.marketplace}</div>
+                      <div className="font-medium text-slate-900">{order.warehouse?.name || '—'}</div>
+                      <div className="text-xs text-slate-500">{order.warehouse?.marketplace || order.marketplace}</div>
                     </TableCell>
                     <TableCell className="text-slate-600 text-xs">
                       {formatDateTime(order.createdAt)}

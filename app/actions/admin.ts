@@ -65,7 +65,10 @@ export async function getAdminOrdersAction(params: GetAdminOrdersParams = {}) {
     }
 
     if (params.warehouseId) {
-      where.warehouseId = params.warehouseId;
+      where.OR = [
+        { warehouseId: params.warehouseId },
+        { destinations: { some: { warehouseId: params.warehouseId } } },
+      ];
     }
 
     if (params.date) {
@@ -97,6 +100,10 @@ export async function getAdminOrdersAction(params: GetAdminOrdersParams = {}) {
         orderBy: { createdAt: 'desc' },
         include: {
           warehouse: true,
+          destinations: {
+            include: { warehouse: true },
+            orderBy: { createdAt: 'asc' },
+          },
           client: true,
           assignments: {
             include: {
@@ -664,4 +671,40 @@ export async function unlinkManagerTelegramAction(): Promise<{
   }
 }
 
+export async function updateDriverWorkflowStatusAction(
+  orderId: string,
+  targetStatus: OrderStatus,
+  comment?: string
+) {
+  const user = await requireStaffUser();
+  try {
+    await OrdersService.updateDriverWorkflowStatusByManager(user, orderId, targetStatus, comment);
+    revalidatePath(`/admin/orders/${orderId}`);
+    revalidatePath('/admin/orders');
+    revalidatePath('/admin');
+    return { success: true };
+  } catch (err: unknown) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Не удалось обновить статус водительского этапа',
+    };
+  }
+}
 
+export async function getWarehouseStatsAction(params: {
+  period?: string;
+  fromDate?: string;
+  toDate?: string;
+  warehouseId?: string;
+} = {}) {
+  await requireStaffUser();
+  try {
+    const stats = await OrdersService.getWarehouseStats(params);
+    return { success: true, data: stats };
+  } catch (err: unknown) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Не удалось загрузить статистику складов',
+    };
+  }
+}

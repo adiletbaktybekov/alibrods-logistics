@@ -12,16 +12,27 @@ export async function createOrderAction(prevState: unknown, formData: FormData) 
     return { success: false, error: 'Необходимо войти в систему как клиент' };
   }
 
-  const warehouseId = formData.get('warehouseId')?.toString() || '';
-  const deliveryDate = formData.get('deliveryDate')?.toString() || '';
+  const destinationsRaw = formData.get('destinations')?.toString();
+  let destinations: unknown = undefined;
+  if (destinationsRaw) {
+    try {
+      destinations = JSON.parse(destinationsRaw);
+    } catch {
+      destinations = undefined;
+    }
+  }
+
+  const warehouseId = formData.get('warehouseId')?.toString() || undefined;
+  const deliveryDate = formData.get('deliveryDate')?.toString() || undefined;
   const totalPalletsCount = formData.get('totalPalletsCount')?.toString() || '0';
-  const totalBoxesCount = formData.get('totalBoxesCount')?.toString() || '1';
+  const totalBoxesCount = formData.get('totalBoxesCount')?.toString() || '0';
   const clientComment = formData.get('clientComment')?.toString() || undefined;
   const idempotencyKey = formData.get('idempotencyKey')?.toString() || undefined;
 
   const parsed = createClientOrderSchema.safeParse({
-    warehouseId,
-    deliveryDate,
+    destinations: Array.isArray(destinations) ? destinations : undefined,
+    warehouseId: warehouseId || undefined,
+    deliveryDate: deliveryDate || undefined,
     totalPalletsCount,
     totalBoxesCount,
     clientComment: clientComment || undefined,
@@ -53,16 +64,27 @@ export async function createMiniAppOrderAction(prevState: unknown, formData: For
     return { success: false, error: 'Необходимо войти в систему как клиент' };
   }
 
-  const warehouseId = formData.get('warehouseId')?.toString() || '';
-  const deliveryDate = formData.get('deliveryDate')?.toString() || '';
+  const destinationsRaw = formData.get('destinations')?.toString();
+  let destinations: unknown = undefined;
+  if (destinationsRaw) {
+    try {
+      destinations = JSON.parse(destinationsRaw);
+    } catch {
+      destinations = undefined;
+    }
+  }
+
+  const warehouseId = formData.get('warehouseId')?.toString() || undefined;
+  const deliveryDate = formData.get('deliveryDate')?.toString() || undefined;
   const totalPalletsCount = formData.get('totalPalletsCount')?.toString() || '0';
-  const totalBoxesCount = formData.get('totalBoxesCount')?.toString() || '1';
+  const totalBoxesCount = formData.get('totalBoxesCount')?.toString() || '0';
   const clientComment = formData.get('clientComment')?.toString() || undefined;
   const idempotencyKey = formData.get('idempotencyKey')?.toString() || undefined;
 
   const parsed = createClientOrderSchema.safeParse({
-    warehouseId,
-    deliveryDate,
+    destinations: Array.isArray(destinations) ? destinations : undefined,
+    warehouseId: warehouseId || undefined,
+    deliveryDate: deliveryDate || undefined,
     totalPalletsCount,
     totalBoxesCount,
     clientComment: clientComment || undefined,

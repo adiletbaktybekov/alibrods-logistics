@@ -7,6 +7,7 @@ import {
   rejectOrderAction,
   assignDriverAction,
   saveManagerNotesAction,
+  updateDriverWorkflowStatusAction,
 } from '@/app/actions/admin';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -56,10 +57,41 @@ export function OrderActions({
   const [assignmentNotes, setAssignmentNotes] = React.useState('');
   const [isAssigningDriver, setIsAssigningDriver] = React.useState(false);
 
+  // Driver Workflow Status State (Manager manual override)
+  const [isUpdatingDriverStatus, setIsUpdatingDriverStatus] = React.useState(false);
+  const [driverStatusComment, setDriverStatusComment] = React.useState('');
+  const [showDriverCommentField, setShowDriverCommentField] = React.useState(false);
+
   const isFinalStatus =
     status === OrderStatus.COMPLETED ||
     status === OrderStatus.CANCELLED ||
     status === OrderStatus.REJECTED_BY_MANAGER;
+
+  // Handle Driver Workflow Stage Update by Manager
+  async function handleDriverStatusUpdate(targetStatus: OrderStatus) {
+    setIsUpdatingDriverStatus(true);
+    setActionError(null);
+    setActionSuccess(null);
+    try {
+      const res = await updateDriverWorkflowStatusAction(
+        orderId,
+        targetStatus,
+        driverStatusComment.trim() || undefined
+      );
+      if (res.success) {
+        setActionSuccess('Статус водительского этапа успешно обновлён менеджером');
+        setDriverStatusComment('');
+        setShowDriverCommentField(false);
+        router.refresh();
+      } else {
+        setActionError(res.error || 'Не удалось обновить статус водительского этапа');
+      }
+    } catch {
+      setActionError('Ошибка сети при обновлении статуса водителя');
+    } finally {
+      setIsUpdatingDriverStatus(false);
+    }
+  }
 
   // Handle Save Notes
   async function handleSaveNotes() {
@@ -342,6 +374,122 @@ export function OrderActions({
           </CardContent>
         </Card>
       )}
+
+      {/* Manager Controls: Driver Workflow Stage */}
+      {assignedDriverId && !isFinalStatus && (
+        <Card className="border-indigo-100 shadow-sm bg-gradient-to-br from-white to-indigo-50/20">
+          <CardHeader className="pb-3 border-b border-indigo-100/60 flex flex-row items-center justify-between">
+            <CardTitle className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <span>🚗 Статус водительского этапа</span>
+            </CardTitle>
+            <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+              {status === OrderStatus.ASSIGNED_TO_DRIVER && 'Ожидает принятия водителем'}
+              {status === OrderStatus.ACCEPTED_BY_DRIVER && 'Принят водителем'}
+              {status === OrderStatus.PICKED_UP && 'Груз забран водителем'}
+              {status === OrderStatus.IN_TRANSIT && 'В пути на склад'}
+              {status === OrderStatus.DELIVERED_TO_WAREHOUSE && 'Доставлен на склад'}
+              {status === OrderStatus.ACCEPTED_BY_MARKETPLACE && 'Принят маркетплейсом'}
+              {!['ASSIGNED_TO_DRIVER', 'ACCEPTED_BY_DRIVER', 'PICKED_UP', 'IN_TRANSIT', 'DELIVERED_TO_WAREHOUSE', 'ACCEPTED_BY_MARKETPLACE'].includes(status) && status}
+            </span>
+          </CardHeader>
+          <CardContent className="pt-4 space-y-3">
+            <p className="text-xs text-slate-600">
+              Менеджер может вручную продвинуть этап водителя, если водитель сообщил о выполнении по телефону или возникли сложности с ботом.
+            </p>
+
+            <div className="flex flex-wrap gap-2 pt-1">
+              {status === OrderStatus.ASSIGNED_TO_DRIVER && (
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  disabled={isUpdatingDriverStatus}
+                  onClick={() => handleDriverStatusUpdate(OrderStatus.ACCEPTED_BY_DRIVER)}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs"
+                >
+                  {isUpdatingDriverStatus ? 'Сохранение...' : '✓ Отметить как «Принято водителем»'}
+                </Button>
+              )}
+
+              {status === OrderStatus.ACCEPTED_BY_DRIVER && (
+                <>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="sm"
+                    disabled={isUpdatingDriverStatus}
+                    onClick={() => handleDriverStatusUpdate(OrderStatus.PICKED_UP)}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
+                  >
+                    {isUpdatingDriverStatus ? 'Сохранение...' : '📦 Отметить как «Груз забран»'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isUpdatingDriverStatus}
+                    onClick={() => handleDriverStatusUpdate(OrderStatus.ASSIGNED_TO_DRIVER)}
+                    className="text-xs text-slate-600 border-slate-300 hover:bg-slate-50"
+                  >
+                    ↩️ Вернуть к «Назначен»
+                  </Button>
+                </>
+              )}
+
+              {status === OrderStatus.PICKED_UP && (
+                <>
+                  <div className="w-full text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-2.5 flex items-center gap-2">
+                    <span>✓ Груз успешно забран у отправителя. Заказ перемещён в историю водителя.</span>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isUpdatingDriverStatus}
+                    onClick={() => handleDriverStatusUpdate(OrderStatus.ACCEPTED_BY_DRIVER)}
+                    className="text-xs text-slate-600 border-slate-300 hover:bg-slate-50"
+                  >
+                    ↩️ Вернуть к «Принято»
+                  </Button>
+                </>
+              )}
+            </div>
+
+            <div className="pt-2 border-t border-indigo-100/40">
+              {!showDriverCommentField ? (
+                <button
+                  type="button"
+                  onClick={() => setShowDriverCommentField(true)}
+                  className="text-[11px] text-indigo-600 hover:underline"
+                >
+                  + Добавить примечание к смене статуса
+                </button>
+              ) : (
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-[11px] text-slate-500">
+                    <span>Примечание к изменению:</span>
+                    <button
+                      type="button"
+                      onClick={() => setShowDriverCommentField(false)}
+                      className="text-slate-400 hover:text-slate-600"
+                    >
+                      Скрыть
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={driverStatusComment}
+                    onChange={(e) => setDriverStatusComment(e.target.value)}
+                    placeholder="Например: подтверждено по рации / звонку..."
+                    className="w-full rounded border border-slate-300 bg-white px-2.5 py-1 text-xs text-slate-900 focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
 
       {/* Internal Manager Notes */}
       <Card className="border-slate-200 shadow-sm bg-white">

@@ -83,9 +83,15 @@ export default async function OrderDetailPage({ params }: OrderDetailPageProps) 
             <CardContent className="pt-4 space-y-4 text-sm">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <div className="text-xs text-slate-500">Склад маркетплейса</div>
-                  <div className="font-semibold text-slate-900 mt-0.5">{order.warehouse.name}</div>
-                  <div className="text-xs text-slate-600 mt-1">{order.warehouse.address}</div>
+                  <div className="text-xs text-slate-500">Склад назначения</div>
+                  <div className="font-semibold text-slate-900 mt-0.5">
+                    {order.destinations && order.destinations.length > 0
+                      ? order.destinations.map((d) => d.isCustomWarehouse ? (d.customWarehouseName || 'Инд. склад') : (d.warehouse?.name || 'Склад')).join(', ')
+                      : order.warehouse?.name || '—'}
+                  </div>
+                  {order.warehouse?.address && (
+                    <div className="text-xs text-slate-600 mt-1">{order.warehouse.address}</div>
+                  )}
                 </div>
 
                 <div>

@@ -36,7 +36,7 @@ export default async function GoogleSheetsIntegrationPage() {
     deliveryCostAmount: Prisma.Decimal | number | null;
     currency: string;
     client: { companyName: string };
-    warehouse: { name: string; marketplace: string };
+    warehouse: { name: string; marketplace: string } | null;
   }> = [];
 
   if (process.env.DATABASE_URL) {
@@ -254,7 +254,7 @@ export default async function GoogleSheetsIntegrationPage() {
                       {o.client?.companyName || '—'}
                     </td>
                     <td className="py-2 px-3 whitespace-nowrap">
-                      {o.warehouse?.name} ({o.warehouse?.marketplace})
+                      {o.warehouse ? `${o.warehouse.name} (${o.warehouse.marketplace})` : '—'}
                     </td>
                     <td className="py-2 px-3 whitespace-nowrap">
                       {o.totalPalletsCount > 0 ? `${o.totalPalletsCount} палл.` : `${o.totalBoxesCount} кор.`}

@@ -155,7 +155,7 @@ describe('CRITICAL: Client Order Creation End-to-End on Neon Staging', () => {
     expect(dbOrder).not.toBeNull();
     expect(dbOrder?.orderNumber).toBe(order.orderNumber);
     expect(dbOrder?.warehouseId).toBe('c0000001-0000-0000-0000-000000000001');
-    expect(dbOrder?.warehouse.name).toBe('Коледино');
+    expect(dbOrder?.warehouse?.name).toBe('Коледино');
     expect(dbOrder?.items).toHaveLength(3);
     expect(dbOrder?.statusHistory).toHaveLength(1);
     expect(dbOrder?.statusHistory[0].toStatus).toBe(OrderStatus.CREATED);
@@ -175,7 +175,7 @@ describe('CRITICAL: Client Order Creation End-to-End on Neon Staging', () => {
 
     const found = listing.items.find((o) => o.id === createdOrderId);
     expect(found).toBeDefined();
-    expect(found?.warehouse.name).toBe('Коледино');
+    expect(found?.warehouse?.name).toBe('Коледино');
   }, 30000);
 
   it('8. Verifies client dashboard statistics reflect the new order (/dashboard)', async () => {
@@ -204,7 +204,7 @@ describe('CRITICAL: Client Order Creation End-to-End on Neon Staging', () => {
     const details = await OrdersService.getById(testUser, createdOrderId!);
     expect(details).toBeDefined();
     expect(details.id).toBe(createdOrderId);
-    expect(details.warehouse.name).toBe('Коледино');
+    expect(details.warehouse?.name).toBe('Коледино');
     expect(details.items).toHaveLength(3);
 
     // 2. IDOR Protection: Unauthorized seller with different userId is rejected with ForbiddenError

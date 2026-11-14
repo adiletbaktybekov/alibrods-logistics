@@ -117,12 +117,15 @@ describe('Telegram Driver Bot & Pairing System', () => {
 
     it('should correctly partition active vs completed driver statuses', () => {
       expect(ACTIVE_DRIVER_STATUSES).toContain(OrderStatus.ASSIGNED_TO_DRIVER);
-      expect(ACTIVE_DRIVER_STATUSES).toContain(OrderStatus.IN_TRANSIT);
+      expect(ACTIVE_DRIVER_STATUSES).toContain(OrderStatus.ACCEPTED_BY_DRIVER);
+      expect(ACTIVE_DRIVER_STATUSES).not.toContain(OrderStatus.PICKED_UP);
       expect(ACTIVE_DRIVER_STATUSES).not.toContain(OrderStatus.COMPLETED);
 
+      expect(COMPLETED_DRIVER_STATUSES).toContain(OrderStatus.PICKED_UP);
+      expect(COMPLETED_DRIVER_STATUSES).toContain(OrderStatus.IN_TRANSIT);
       expect(COMPLETED_DRIVER_STATUSES).toContain(OrderStatus.ACCEPTED_BY_MARKETPLACE);
       expect(COMPLETED_DRIVER_STATUSES).toContain(OrderStatus.COMPLETED);
-      expect(COMPLETED_DRIVER_STATUSES).not.toContain(OrderStatus.IN_TRANSIT);
+      expect(COMPLETED_DRIVER_STATUSES).not.toContain(OrderStatus.ACCEPTED_BY_DRIVER);
     });
   });
 

@@ -151,40 +151,147 @@ export default async function AdminOrderDetailPage({ params }: AdminOrderDetailP
 
           {/* Cargo & Destination Details */}
           <Card className="border-slate-200 shadow-sm bg-white">
-            <CardHeader className="pb-3 border-b border-slate-100">
-              <CardTitle className="text-base text-slate-900">Параметры груза и маршрут</CardTitle>
+            <CardHeader className="pb-3 border-b border-slate-100 flex flex-row items-center justify-between">
+              <CardTitle className="text-base text-slate-900">
+                Маршрут и склады назначения
+                {order.destinations && order.destinations.length > 1 && (
+                  <span className="ml-2 text-xs font-normal text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">
+                    Складов: {order.destinations.length}
+                  </span>
+                )}
+              </CardTitle>
+              <div className="text-xs font-semibold text-slate-700">
+                Итого:{' '}
+                <span className="text-indigo-600">
+                  {order.totalBoxesCount} кор.
+                  {order.totalPalletsCount > 0 && ` • ${order.totalPalletsCount} палл.`}
+                </span>
+              </div>
             </CardHeader>
             <CardContent className="pt-4 space-y-4 text-xs">
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                <div>
-                  <span className="text-slate-500 block">Склад назначения:</span>
-                  <span className="font-semibold text-slate-900 text-sm">
-                    {order.warehouse?.name || '—'}
+              {/* Detailed Destinations List */}
+              {order.destinations && order.destinations.length > 0 ? (
+                <div className="space-y-3">
+                  <span className="text-slate-500 font-medium block">
+                    {order.destinations.length > 1 ? 'Точки разгрузки / склады:' : 'Склад назначения:'}
                   </span>
-                  <span className="text-[11px] text-slate-500 block">
-                    {order.warehouse?.marketplace}
-                  </span>
-                </div>
+                  <div className="space-y-2">
+                    {order.destinations.map((dest, idx) => (
+                      <div
+                        key={dest.id || idx}
+                        className="p-3 rounded-lg border border-slate-200 bg-slate-50/70 hover:bg-slate-50 transition-colors"
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="w-5 h-5 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-[10px]">
+                              {idx + 1}
+                            </span>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold text-slate-900 text-sm">
+                                  {dest.isCustomWarehouse
+                                    ? dest.customWarehouseName || 'Индивидуальный склад'
+                                    : dest.warehouse?.name || 'Не указан'}
+                                </span>
+                                {dest.isCustomWarehouse ? (
+                                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
+                                    Индивидуальный склад
+                                  </span>
+                                ) : (
+                                  dest.warehouse?.marketplace && (
+                                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
+                                      {dest.warehouse.marketplace}
+                                    </span>
+                                  )
+                                )}
+                              </div>
+                              {!dest.isCustomWarehouse && dest.warehouse?.city && (
+                                <span className="text-[11px] text-slate-500 block">
+                                  {dest.warehouse.city}
+                                  {dest.warehouse.address ? ` • ${dest.warehouse.address}` : ''}
+                                </span>
+                              )}
+                            </div>
+                          </div>
 
-                <div>
-                  <span className="text-slate-500 block">Объём партии:</span>
-                  <div className="font-semibold text-slate-900 text-sm mt-0.5">
-                    {order.totalPalletsCount > 0 ? (
-                      <span className="text-indigo-600">{order.totalPalletsCount} палл.</span>
-                    ) : (
-                      <span>{order.totalBoxesCount} кор.</span>
-                    )}
+                          <div className="flex items-center gap-3 sm:text-right shrink-0">
+                            <div>
+                              <span className="text-slate-400 block text-[10px] uppercase">Дата сдачи</span>
+                              <span className="font-medium text-slate-800 text-xs">
+                                {dest.deliveryDate ? formatDateTime(dest.deliveryDate) : 'Не указана'}
+                              </span>
+                            </div>
+                            <div className="border-l border-slate-200 pl-3">
+                              <span className="text-slate-400 block text-[10px] uppercase">Объём</span>
+                              <span className="font-bold text-slate-900 text-xs">
+                                {dest.boxesCount} кор.
+                                {dest.palletsCount > 0 && ` / ${dest.palletsCount} палл.`}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {dest.comment && (
+                          <div className="mt-2 text-[11px] text-slate-600 bg-white/80 p-1.5 rounded border border-slate-200/60 italic">
+                            Примечание: {dest.comment}
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                  <div>
+                    <span className="text-slate-500 block">Склад назначения:</span>
+                    <span className="font-semibold text-slate-900 text-sm">
+                      {order.warehouse?.name || '—'}
+                    </span>
+                    <span className="text-[11px] text-slate-500 block">
+                      {order.warehouse?.marketplace}
+                    </span>
+                  </div>
 
+                  <div>
+                    <span className="text-slate-500 block">Объём партии:</span>
+                    <div className="font-semibold text-slate-900 text-sm mt-0.5">
+                      {order.totalPalletsCount > 0 ? (
+                        <span className="text-indigo-600">{order.totalPalletsCount} палл.</span>
+                      ) : (
+                        <span>{order.totalBoxesCount} кор.</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="text-slate-500 block">Стоимость доставки:</span>
+                    <span className="font-semibold text-slate-900 text-sm">
+                      {order.deliveryCostAmount != null
+                        ? `${Number(order.deliveryCostAmount).toLocaleString()} ₽`
+                        : 'Не рассчитана'}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Delivery Cost Bar */}
+              <div className="border-t border-slate-100 pt-3 flex items-center justify-between">
                 <div>
-                  <span className="text-slate-500 block">Стоимость доставки:</span>
+                  <span className="text-slate-500 block">Стоимость доставки (по расчёту):</span>
                   <span className="font-semibold text-slate-900 text-sm">
                     {order.deliveryCostAmount != null
-                      ? `${Number(order.deliveryCostAmount).toLocaleString()} ₽`
+                      ? `${Number(order.deliveryCostAmount).toLocaleString()} ${order.currency || '₽'}`
                       : 'Не рассчитана'}
                   </span>
                 </div>
+                {order.scheduledPickupAt && (
+                  <div className="text-right">
+                    <span className="text-slate-500 block">Желаемое время забора:</span>
+                    <span className="font-medium text-slate-800 text-xs">
+                      {formatDateTime(order.scheduledPickupAt)}
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div className="border-t border-slate-100 pt-3">

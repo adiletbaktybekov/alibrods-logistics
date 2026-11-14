@@ -7,10 +7,21 @@ import { AuthenticatedUser } from '@/types/rbac';
 import { AuditService } from '@/modules/audit/audit.service';
 import { AuditAction, AssignmentStatus, MarketplaceType, OrderStatus, Prisma, UserRole } from '@prisma/client';
 import { WarehousesService, isWarehouseOpenOnDate } from '@/modules/warehouses/warehouses.service';
-import { CreateOrderDto, CreateClientOrderDto, UpdateOrderStatusDto, AssignDriverDto } from './orders.dto';
+import {
+  CreateOrderDto,
+  CreateClientOrderDto,
+  UpdateOrderStatusDto,
+  AssignDriverDto,
+  WarehouseStatsFilter,
+  WarehouseStatsResult,
+  WarehouseRankingItem,
+  WarehouseDailyTrendPoint,
+} from './orders.dto';
 import { NotificationDispatcherService } from '@/modules/notifications/dispatcher.service';
 import { GoogleSheetsSyncService } from '@/modules/integrations/google-sheets-sync.service';
 import { IdempotencyService } from '@/lib/security/idempotency.service';
+
+import { siteConfig } from '@/config/site';
 
 export interface AdminDashboardDailyPoint {
   date: string;
@@ -51,7 +62,7 @@ export interface AdminDashboardStats {
 
 export class OrdersService {
   /**
-   * Creates an order from the client portal interface
+   * Creates an order from the client portal interface with multi-destination support
    */
   public static async createFromClient(
     user: AuthenticatedUser,
@@ -65,27 +76,77 @@ export class OrdersService {
     const client = await prisma.clientProfile.findUnique({ where: { userId: user.id } });
     if (!client) throw new ValidationError('Профиль клиента не найден');
 
-    const warehouse = await WarehousesService.getById(dto.warehouseId);
-    if (!warehouse) throw new NotFoundError('Warehouse', dto.warehouseId);
+    const rawDestinations =
+      dto.destinations && dto.destinations.length > 0
+        ? dto.destinations
+        : dto.warehouseId
+        ? [
+            {
+              warehouseId: dto.warehouseId,
+              isCustomWarehouse: false,
+              customWarehouseName: null,
+              deliveryDate: dto.deliveryDate!,
+              boxesCount: dto.totalBoxesCount || 0,
+              palletsCount: dto.totalPalletsCount || 0,
+              comment: null,
+            },
+          ]
+        : [];
 
-    // Informational schedule check (does not block order submission; manager reviews in approval workflow)
-    const isStandardScheduleDay = isWarehouseOpenOnDate(warehouse, dto.deliveryDate);
-    if (!isStandardScheduleDay) {
-      logger.info({
-        event: 'WAREHOUSE_NON_STANDARD_SCHEDULE_ORDER',
-        warehouseId: warehouse.id,
-        warehouseName: warehouse.name,
-        deliveryDate: dto.deliveryDate,
-        scheduleDescription: warehouse.scheduleDescription,
-      }, 'Client created order with delivery date outside standard warehouse schedule; order submitted for manager moderation');
+    if (rawDestinations.length === 0) {
+      throw new ValidationError('Заявка должна содержать хотя бы один склад назначения');
     }
+
+    // Resolve and validate warehouses
+    let primaryWarehouseId: string | null = null;
+    let primaryMarketplace: MarketplaceType = MarketplaceType.WILDBERRIES;
+
+    for (const dest of rawDestinations) {
+      if (!dest.isCustomWarehouse && dest.warehouseId) {
+        const wh = await WarehousesService.getById(dest.warehouseId);
+        if (!wh) {
+          throw new NotFoundError('Warehouse', dest.warehouseId);
+        }
+        if (!primaryWarehouseId) {
+          primaryWarehouseId = wh.id;
+          primaryMarketplace = wh.marketplace;
+        }
+
+        const isStandardScheduleDay = isWarehouseOpenOnDate(wh, dest.deliveryDate);
+        if (!isStandardScheduleDay) {
+          logger.info(
+            {
+              event: 'WAREHOUSE_NON_STANDARD_SCHEDULE_ORDER',
+              warehouseId: wh.id,
+              warehouseName: wh.name,
+              deliveryDate: dest.deliveryDate,
+              scheduleDescription: wh.scheduleDescription,
+            },
+            'Client created order with delivery date outside standard warehouse schedule; order submitted for manager moderation'
+          );
+        }
+      }
+    }
+
+    const totalBoxesCount = rawDestinations.reduce((acc, d) => acc + (d.boxesCount || 0), 0);
+    const totalPalletsCount = rawDestinations.reduce((acc, d) => acc + (d.palletsCount || 0), 0);
+    const scheduledPickupAt =
+      rawDestinations
+        .map((d) => new Date(d.deliveryDate))
+        .sort((a, b) => a.getTime() - b.getTime())[0] || new Date();
 
     const idempotencyPayload = {
       clientId: client.id,
-      warehouseId: dto.warehouseId,
-      deliveryDate: dto.deliveryDate,
-      totalBoxesCount: dto.totalBoxesCount,
-      totalPalletsCount: dto.totalPalletsCount,
+      destinations: rawDestinations.map((d) => ({
+        warehouseId: d.warehouseId,
+        isCustom: d.isCustomWarehouse,
+        name: d.customWarehouseName,
+        date: d.deliveryDate,
+        boxes: d.boxesCount,
+        pallets: d.palletsCount,
+      })),
+      totalBoxesCount,
+      totalPalletsCount,
       clientComment: dto.clientComment,
     };
 
@@ -97,25 +158,54 @@ export class OrdersService {
         payload: idempotencyPayload,
       },
       async (tx) => {
-        const orderNumber = dto.orderNumber || generateOrderNumber();
+        let orderNumber = dto.orderNumber;
+        if (!orderNumber) {
+          try {
+            if (typeof (tx as any).$queryRaw === 'function') {
+              const nextSeq = await (tx as any).$queryRaw<{ nextval: bigint }[]>`SELECT nextval('order_number_seq')`;
+              const seqNum = nextSeq[0]?.nextval ?? 1n;
+              orderNumber = `${siteConfig.orderPrefix}-${seqNum}`;
+            } else {
+              orderNumber = generateOrderNumber();
+            }
+          } catch {
+            orderNumber = generateOrderNumber();
+          }
+        }
 
-        const itemsData = Array.from({ length: dto.totalBoxesCount }, (_, idx) => ({
+        const itemsCount = Math.max(1, totalBoxesCount);
+        const itemsData = Array.from({ length: itemsCount }, (_, idx) => ({
           boxNumber: idx + 1,
           quantity: 1,
           cargoDescription: `Грузовое место (коробка) №${idx + 1}`,
+        }));
+
+        const destinationsCreateData = rawDestinations.map((d) => ({
+          warehouseId: d.isCustomWarehouse ? null : d.warehouseId,
+          isCustomWarehouse: Boolean(d.isCustomWarehouse),
+          customWarehouseName: d.isCustomWarehouse
+            ? d.customWarehouseName?.trim() || 'Индивидуальный склад'
+            : null,
+          deliveryDate: d.deliveryDate,
+          boxesCount: d.boxesCount || 0,
+          palletsCount: d.palletsCount || 0,
+          comment: d.comment || null,
         }));
 
         const order = await tx.order.create({
           data: {
             orderNumber,
             clientId: client.id,
-            warehouseId: warehouse.id,
-            marketplace: warehouse.marketplace,
+            warehouseId: primaryWarehouseId,
+            marketplace: primaryMarketplace,
             status: OrderStatus.CREATED,
-            scheduledPickupAt: dto.deliveryDate,
-            totalBoxesCount: dto.totalBoxesCount,
-            totalPalletsCount: dto.totalPalletsCount,
+            scheduledPickupAt,
+            totalBoxesCount,
+            totalPalletsCount,
             clientComment: dto.clientComment,
+            destinations: {
+              create: destinationsCreateData,
+            },
             items: {
               create: itemsData,
             },
@@ -129,6 +219,9 @@ export class OrdersService {
           },
           include: {
             warehouse: true,
+            destinations: {
+              include: { warehouse: true },
+            },
             items: true,
           },
         });
@@ -224,7 +317,14 @@ export class OrdersService {
       };
     });
 
-    const orderNumber = generateOrderNumber();
+    let orderNumber: string;
+    try {
+      const seqResult = await prisma.$queryRaw<{ nextval: bigint }[]>`SELECT nextval('order_number_seq')`;
+      const seqNum = seqResult[0]?.nextval ?? 1n;
+      orderNumber = `${siteConfig.orderPrefix}-${seqNum}`;
+    } catch {
+      orderNumber = generateOrderNumber();
+    }
 
     const order = await prisma.order.create({
       data: {
@@ -243,6 +343,17 @@ export class OrdersService {
         totalPalletsCount: dto.totalPalletsCount || 0,
         totalWeightKg: totalWeightKg > 0 ? totalWeightKg : undefined,
         totalVolumeM3: totalVolumeM3 > 0 ? totalVolumeM3 : undefined,
+        destinations: {
+          create: [
+            {
+              warehouseId: dto.warehouseId,
+              isCustomWarehouse: false,
+              deliveryDate: dto.scheduledPickupAt || new Date(),
+              boxesCount: totalBoxesCount,
+              palletsCount: dto.totalPalletsCount || 0,
+            },
+          ],
+        },
         items: {
           create: itemsData,
         },
@@ -257,6 +368,9 @@ export class OrdersService {
       include: {
         items: true,
         warehouse: true,
+        destinations: {
+          include: { warehouse: true },
+        },
       },
     });
 
@@ -313,6 +427,10 @@ export class OrdersService {
           },
         },
         warehouse: true,
+        destinations: {
+          include: { warehouse: true },
+          orderBy: { createdAt: 'asc' },
+        },
         items: { orderBy: { boxNumber: 'asc' } },
         assignments: {
           include: {
@@ -411,6 +529,10 @@ export class OrdersService {
         orderBy: { createdAt: 'desc' },
         include: {
           warehouse: { select: { name: true, marketplace: true, code: true } },
+          destinations: {
+            include: { warehouse: true },
+            orderBy: { createdAt: 'asc' },
+          },
           client: { select: { companyName: true } },
         },
       }),
@@ -1120,5 +1242,376 @@ export class OrdersService {
     NotificationDispatcherService.notifyCostCalculated(order.id, amount, currency).catch(() => {});
 
     return { order: updated, isUpdated: true };
+  }
+
+  /**
+   * Manager manually advances or rolls back driver workflow status
+   * (e.g. ACCEPTED_BY_DRIVER, PICKED_UP, or rollback to ASSIGNED_TO_DRIVER)
+   * Updates Order.status and OrderAssignment atomically, records OrderStatusHistory and AuditLog.
+   * Dispatches client notification if needed, and synchronizes to Google Sheets.
+   * Topic 8 (shipping group) is NEVER spammed.
+   */
+  public static async updateDriverWorkflowStatusByManager(
+    user: AuthenticatedUser,
+    orderId: string,
+    targetStatus: OrderStatus,
+    comment?: string,
+    ipAddress?: string
+  ) {
+    if (!['SUPER_ADMIN', 'ADMIN', 'MANAGER'].includes(user.role)) {
+      throw new ForbiddenError('Только менеджеры могут управлять статусом водительского этапа');
+    }
+
+    const validStatuses: OrderStatus[] = [
+      OrderStatus.ASSIGNED_TO_DRIVER,
+      OrderStatus.ACCEPTED_BY_DRIVER,
+      OrderStatus.PICKED_UP,
+    ];
+
+    if (!validStatuses.includes(targetStatus)) {
+      throw new ValidationError(`Недопустимый статус водительского этапа: ${targetStatus}`);
+    }
+
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: {
+        assignments: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundError('Order', orderId);
+    }
+
+    const activeAssignment = order.assignments[0];
+    const previousStatus = order.status;
+
+    const actionText =
+      targetStatus === OrderStatus.ACCEPTED_BY_DRIVER
+        ? 'Водитель принял заказ (установлено менеджером)'
+        : targetStatus === OrderStatus.PICKED_UP
+        ? 'Водитель забрал груз (установлено менеджером)'
+        : 'Возврат к этапу назначения водителя (установлено менеджером)';
+
+    const historyComment = comment ? `${actionText}. Примечание: ${comment.trim()}` : actionText;
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const updatedOrder = await tx.order.update({
+        where: { id: orderId },
+        data: { status: targetStatus },
+      });
+
+      if (activeAssignment) {
+        let assignmentStatus: AssignmentStatus = AssignmentStatus.ASSIGNED;
+        if (targetStatus === OrderStatus.ACCEPTED_BY_DRIVER) {
+          assignmentStatus = AssignmentStatus.ACCEPTED;
+        } else if (targetStatus === OrderStatus.PICKED_UP) {
+          assignmentStatus = AssignmentStatus.IN_PROGRESS;
+        }
+
+        await tx.orderAssignment.update({
+          where: { id: activeAssignment.id },
+          data: {
+            status: assignmentStatus,
+            acceptedAt:
+              targetStatus === OrderStatus.ACCEPTED_BY_DRIVER || targetStatus === OrderStatus.PICKED_UP
+                ? activeAssignment.acceptedAt || new Date()
+                : activeAssignment.acceptedAt,
+          },
+        });
+      }
+
+      await tx.orderStatusHistory.create({
+        data: {
+          orderId,
+          fromStatus: previousStatus,
+          toStatus: targetStatus,
+          changedById: user.id,
+          comment: historyComment,
+        },
+      });
+
+      return updatedOrder;
+    });
+
+    await AuditService.log({
+      userId: user.id,
+      action: AuditAction.STATUS_CHANGE,
+      resource: 'Order',
+      resourceId: orderId,
+      oldValue: { status: previousStatus },
+      newValue: { status: targetStatus },
+      metadata: {
+        manualManagerOverride: true,
+        assignmentId: activeAssignment?.id,
+        comment: comment || null,
+      },
+      ipAddress,
+    });
+
+    // Sync to Google Sheets
+    GoogleSheetsSyncService.syncOrder(orderId).catch((sheetsErr) => {
+      logger.error({ err: sheetsErr, orderId }, 'Failed to sync status change to Google Sheets');
+    });
+
+    // Notify client (silenced for group topic 8)
+    NotificationDispatcherService.notifyStatusChanged(
+      orderId,
+      previousStatus,
+      targetStatus,
+      comment
+    ).catch(() => {});
+
+    return updated;
+  }
+
+  /**
+   * Warehouse Analytics with flexible period filters, KPI cards,
+   * warehouse ranking by volume (boxes/pallets), and daily trend.
+   */
+  public static async getWarehouseStats(filter: WarehouseStatsFilter = {}): Promise<WarehouseStatsResult> {
+    const period = filter.period || '7d';
+    let fromDate: Date;
+    let toDate: Date = new Date();
+    toDate.setHours(23, 59, 59, 999);
+
+    const now = new Date();
+
+    switch (period) {
+      case 'today':
+        fromDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+        break;
+      case 'yesterday': {
+        const yest = new Date(now);
+        yest.setDate(yest.getDate() - 1);
+        fromDate = new Date(yest.getFullYear(), yest.getMonth(), yest.getDate(), 0, 0, 0, 0);
+        toDate = new Date(yest.getFullYear(), yest.getMonth(), yest.getDate(), 23, 59, 59, 999);
+        break;
+      }
+      case '30d':
+        fromDate = new Date(now);
+        fromDate.setDate(fromDate.getDate() - 29);
+        fromDate.setHours(0, 0, 0, 0);
+        break;
+      case 'month':
+        fromDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+        break;
+      case 'custom':
+        fromDate = filter.fromDate ? new Date(filter.fromDate) : new Date(now.getTime() - 7 * 86400000);
+        fromDate.setHours(0, 0, 0, 0);
+        if (filter.toDate) {
+          toDate = new Date(filter.toDate);
+          toDate.setHours(23, 59, 59, 999);
+        }
+        break;
+      case '7d':
+      default:
+        fromDate = new Date(now);
+        fromDate.setDate(fromDate.getDate() - 6);
+        fromDate.setHours(0, 0, 0, 0);
+        break;
+    }
+
+    const orderWhere: Record<string, any> = {
+      createdAt: {
+        gte: fromDate,
+        lte: toDate,
+      },
+    };
+
+    const destinations = await prisma.orderDestination.findMany({
+      where: {
+        order: orderWhere,
+        ...(filter.warehouseId && filter.warehouseId !== 'all'
+          ? filter.warehouseId === 'custom'
+            ? { isCustomWarehouse: true }
+            : { warehouseId: filter.warehouseId }
+          : {}),
+      },
+      include: {
+        warehouse: true,
+        order: {
+          select: {
+            id: true,
+            status: true,
+            marketplace: true,
+            createdAt: true,
+          },
+        },
+      },
+    });
+
+    const uniqueOrderIds = new Set<string>();
+    let totalBoxes = 0;
+    let totalPallets = 0;
+    let completedOrdersCount = 0;
+    let inDeliveryOrdersCount = 0;
+
+    const inDeliveryStatuses: OrderStatus[] = [
+      OrderStatus.ASSIGNED_TO_DRIVER,
+      OrderStatus.ACCEPTED_BY_DRIVER,
+      OrderStatus.PICKED_UP,
+      OrderStatus.IN_TRANSIT,
+      OrderStatus.DELIVERED_TO_WAREHOUSE,
+    ];
+    const completedStatuses: OrderStatus[] = [
+      OrderStatus.ACCEPTED_BY_MARKETPLACE,
+      OrderStatus.COMPLETED,
+    ];
+
+    const marketCounts = {
+      wb: { orders: new Set<string>(), boxes: 0, pallets: 0 },
+      ozon: { orders: new Set<string>(), boxes: 0, pallets: 0 },
+    };
+
+    const warehouseMap = new Map<string, {
+      warehouseId: string | null;
+      warehouseName: string;
+      marketplace: string;
+      city: string;
+      isCustom: boolean;
+      ordersSet: Set<string>;
+      boxesCount: number;
+      palletsCount: number;
+    }>();
+
+    for (const d of destinations) {
+      uniqueOrderIds.add(d.orderId);
+      totalBoxes += d.boxesCount;
+      totalPallets += d.palletsCount;
+
+      if (d.order) {
+        if (completedStatuses.includes(d.order.status)) {
+          completedOrdersCount++;
+        } else if (inDeliveryStatuses.includes(d.order.status)) {
+          inDeliveryOrdersCount++;
+        }
+
+        if (d.order.marketplace === MarketplaceType.WILDBERRIES) {
+          marketCounts.wb.orders.add(d.orderId);
+          marketCounts.wb.boxes += d.boxesCount;
+          marketCounts.wb.pallets += d.palletsCount;
+        } else if (d.order.marketplace === MarketplaceType.OZON) {
+          marketCounts.ozon.orders.add(d.orderId);
+          marketCounts.ozon.boxes += d.boxesCount;
+          marketCounts.ozon.pallets += d.palletsCount;
+        }
+      }
+
+      const mapKey = d.isCustomWarehouse
+        ? `custom:${(d.customWarehouseName || 'Индивидуальный склад').trim()}`
+        : (d.warehouseId || 'unknown');
+
+      const existing = warehouseMap.get(mapKey);
+      const name = d.isCustomWarehouse
+        ? (d.customWarehouseName || 'Индивидуальный склад')
+        : (d.warehouse?.name || 'Не указан');
+      const mp = d.warehouse?.marketplace || (d.order?.marketplace || 'WILDBERRIES');
+      const city = d.warehouse?.city || '—';
+
+      if (!existing) {
+        warehouseMap.set(mapKey, {
+          warehouseId: d.warehouseId,
+          warehouseName: name,
+          marketplace: mp,
+          city,
+          isCustom: d.isCustomWarehouse,
+          ordersSet: new Set([d.orderId]),
+          boxesCount: d.boxesCount,
+          palletsCount: d.palletsCount,
+        });
+      } else {
+        existing.ordersSet.add(d.orderId);
+        existing.boxesCount += d.boxesCount;
+        existing.palletsCount += d.palletsCount;
+      }
+    }
+
+    const warehousesRanking: WarehouseRankingItem[] = Array.from(warehouseMap.values())
+      .map((item) => ({
+        warehouseId: item.warehouseId,
+        warehouseName: item.warehouseName,
+        marketplace: item.marketplace,
+        city: item.city,
+        isCustom: item.isCustom,
+        ordersCount: item.ordersSet.size,
+        boxesCount: item.boxesCount,
+        palletsCount: item.palletsCount,
+        boxesPercentage: totalBoxes > 0 ? Math.round((item.boxesCount / totalBoxes) * 100) : 0,
+        palletsPercentage: totalPallets > 0 ? Math.round((item.palletsCount / totalPallets) * 100) : 0,
+      }))
+      .sort((a, b) => (b.boxesCount + b.palletsCount * 10) - (a.boxesCount + a.palletsCount * 10));
+
+    const dailyTrend: WarehouseDailyTrendPoint[] = [];
+    const curDate = new Date(fromDate);
+    const dayEnd = new Date(toDate);
+
+    while (curDate <= dayEnd && dailyTrend.length < 60) {
+      const nextDate = new Date(curDate);
+      nextDate.setDate(nextDate.getDate() + 1);
+
+      const dayDests = destinations.filter((d) => {
+        const orderDate = d.order?.createdAt || d.createdAt;
+        return orderDate >= curDate && orderDate < nextDate;
+      });
+
+      const dayOrders = new Set(dayDests.map((d) => d.orderId));
+      const dayBoxes = dayDests.reduce((sum, d) => sum + d.boxesCount, 0);
+      const dayPallets = dayDests.reduce((sum, d) => sum + d.palletsCount, 0);
+
+      const dStr = curDate.toISOString().split('T')[0];
+      const dayNum = String(curDate.getDate()).padStart(2, '0');
+      const monNum = String(curDate.getMonth() + 1).padStart(2, '0');
+
+      dailyTrend.push({
+        date: dStr,
+        label: `${dayNum}.${monNum}`,
+        ordersCount: dayOrders.size,
+        boxesCount: dayBoxes,
+        palletsCount: dayPallets,
+      });
+
+      curDate.setDate(curDate.getDate() + 1);
+    }
+
+    const totalOrdersCount = uniqueOrderIds.size;
+    const totalCargoUnits = totalBoxes + totalPallets;
+
+    return {
+      period,
+      fromDate: fromDate.toISOString().split('T')[0],
+      toDate: toDate.toISOString().split('T')[0],
+      kpi: {
+        totalOrders: totalOrdersCount,
+        totalBoxes,
+        totalPallets,
+        completedOrders: completedOrdersCount,
+        inDeliveryOrders: inDeliveryOrdersCount,
+        activeDestinations: destinations.length,
+      },
+      warehouses: warehousesRanking,
+      dailyTrend,
+      marketplaceBreakdown: {
+        wb: {
+          orders: marketCounts.wb.orders.size,
+          boxes: marketCounts.wb.boxes,
+          pallets: marketCounts.wb.pallets,
+          percentage: totalCargoUnits > 0
+            ? Math.round(((marketCounts.wb.boxes + marketCounts.wb.pallets) / totalCargoUnits) * 100)
+            : 50,
+        },
+        ozon: {
+          orders: marketCounts.ozon.orders.size,
+          boxes: marketCounts.ozon.boxes,
+          pallets: marketCounts.ozon.pallets,
+          percentage: totalCargoUnits > 0
+            ? Math.round(((marketCounts.ozon.boxes + marketCounts.ozon.pallets) / totalCargoUnits) * 100)
+            : 50,
+        },
+      },
+    };
   }
 }

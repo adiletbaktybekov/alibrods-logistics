@@ -41,6 +41,7 @@ export interface TelegramOrderNotificationPayload {
   orderNumber: string;
   marketplace: string;
   warehouseName: string;
+  destinationsSummary?: string;
   scheduledPickupAt?: Date | string | null;
   totalBoxesCount: number;
   totalPalletsCount: number;
@@ -224,7 +225,9 @@ export class TelegramNotificationService {
       `<b>AliBros Logistics</b>`,
       `<b>${eventTitle}</b>`,
       `Маркетплейс: <b>${payload.marketplace}</b>`,
-      `Склад назначения: <b>${payload.warehouseName}</b>`,
+      payload.destinationsSummary
+        ? `Склады назначения:\n${payload.destinationsSummary}`
+        : `Склад назначения: <b>${payload.warehouseName}</b>`,
       `Дата доставки: ${dateStr}`,
       `Груз: ${cargo}`,
       `Статус: ${statusText}`,

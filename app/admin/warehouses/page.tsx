@@ -1,8 +1,10 @@
 import * as React from 'react';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getAdminWarehousesAction } from '@/app/actions/admin';
 import { CONFIRMED_WAREHOUSES, WarehouseSchedule } from '@/modules/warehouses/warehouses.service';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Warehouse } from '@prisma/client';
 import { isExpectedAuthError } from '@/lib/errors';
@@ -105,7 +107,12 @@ export default async function AdminWarehousesPage() {
             Подтверждённые склады маркетплейсов WB и Ozon в базе данных ({enrichedWarehouses.length})
           </p>
         </div>
-        <div>
+        <div className="flex items-center gap-3">
+          <Link href="/admin/warehouses/stats">
+            <Button variant="primary" size="sm" className="bg-brand-600 hover:bg-brand-700 text-white">
+              📊 Аналитика грузопотока
+            </Button>
+          </Link>
           <Badge variant="outline" className="text-xs bg-slate-50 text-slate-700 border-slate-300">
             Строгая валидация дат активна
           </Badge>

@@ -25,6 +25,53 @@ export interface SingleOrderSyncResult {
   error?: string;
 }
 
+function formatDestinationsForSheet(order: {
+  destinations?: Array<{
+    isCustomWarehouse?: boolean;
+    customWarehouseName?: string | null;
+    warehouse?: { name: string } | null;
+    boxesCount: number;
+    palletsCount: number;
+  }>;
+  warehouse?: { name: string } | null;
+}): string {
+  if (order.destinations && order.destinations.length > 0) {
+    return order.destinations
+      .map((d) => {
+        const name = d.isCustomWarehouse
+          ? d.customWarehouseName || 'Инд. склад'
+          : d.warehouse?.name || 'Склад';
+        const cargo = [
+          `${d.boxesCount} кор.`,
+          d.palletsCount > 0 ? `${d.palletsCount} палл.` : null,
+        ]
+          .filter(Boolean)
+          .join(', ');
+        return `${name} (${cargo})`;
+      })
+      .join('; ');
+  }
+  return order.warehouse?.name || '—';
+}
+
+function formatPickupDateForSheet(order: {
+  destinations?: Array<{ deliveryDate?: Date | null }>;
+  scheduledPickupAt?: Date | null;
+}): string {
+  if (order.destinations && order.destinations.length > 0) {
+    const dates = order.destinations
+      .map((d) => (d.deliveryDate ? d.deliveryDate.toISOString().slice(0, 10) : null))
+      .filter((d): d is string => Boolean(d));
+    if (dates.length > 0) {
+      const unique = Array.from(new Set(dates));
+      return unique.join(', ');
+    }
+  }
+  return order.scheduledPickupAt
+    ? order.scheduledPickupAt.toISOString().slice(0, 10)
+    : 'По согласованию';
+}
+
 export class GoogleSheetsSyncService {
   /**
    * Performs full bi-directional sync:
@@ -127,6 +174,10 @@ export class GoogleSheetsSyncService {
         include: {
           client: true,
           warehouse: true,
+          destinations: {
+            include: { warehouse: true },
+            orderBy: { createdAt: 'asc' },
+          },
         },
         orderBy: { createdAt: 'desc' },
       });
@@ -135,13 +186,11 @@ export class GoogleSheetsSyncService {
         orderId: o.id,
         orderNumber: o.orderNumber,
         createdAt: o.createdAt.toISOString().slice(0, 19).replace('T', ' '),
-        clientCompany: o.client.companyName || '—',
-        contactPerson: o.client.contactPerson || o.pickupContactName || '—',
-        contactPhone: o.client.contactPhone || o.pickupContactPhone || '—',
-        warehouseName: o.warehouse.name,
-        scheduledPickupDate: o.scheduledPickupAt
-          ? o.scheduledPickupAt.toISOString().slice(0, 10)
-          : 'По согласованию',
+        clientCompany: o.client?.companyName || '—',
+        contactPerson: o.client?.contactPerson || o.pickupContactName || '—',
+        contactPhone: o.client?.contactPhone || o.pickupContactPhone || '—',
+        warehouseName: formatDestinationsForSheet(o),
+        scheduledPickupDate: formatPickupDateForSheet(o),
         boxesCount: o.totalBoxesCount,
         palletsCount: o.totalPalletsCount,
         status: STATUS_LABELS[o.status] || o.status,
@@ -331,6 +380,10 @@ export class GoogleSheetsSyncService {
         include: {
           client: true,
           warehouse: true,
+          destinations: {
+            include: { warehouse: true },
+            orderBy: { createdAt: 'asc' },
+          },
         },
       });
 
@@ -350,10 +403,8 @@ export class GoogleSheetsSyncService {
         clientCompany: order.client?.companyName || '—',
         contactPerson: order.client?.contactPerson || order.pickupContactName || '—',
         contactPhone: order.client?.contactPhone || order.pickupContactPhone || '—',
-        warehouseName: order.warehouse?.name || '—',
-        scheduledPickupDate: order.scheduledPickupAt
-          ? order.scheduledPickupAt.toISOString().slice(0, 10)
-          : 'По согласованию',
+        warehouseName: formatDestinationsForSheet(order),
+        scheduledPickupDate: formatPickupDateForSheet(order),
         boxesCount: order.totalBoxesCount,
         palletsCount: order.totalPalletsCount,
         status: STATUS_LABELS[order.status] || order.status,

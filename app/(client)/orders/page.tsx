@@ -121,8 +121,8 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
                     {order.scheduledPickupAt ? formatDateTime(order.scheduledPickupAt) : 'По согласованию'}
                   </TableCell>
                   <TableCell>
-                    <div className="font-medium text-slate-900">{order.warehouse.name}</div>
-                    <div className="text-xs text-slate-500">{order.warehouse.marketplace}</div>
+                    <div className="font-medium text-slate-900">{order.warehouse?.name || '—'}</div>
+                    <div className="text-xs text-slate-500">{order.warehouse?.marketplace || order.marketplace}</div>
                   </TableCell>
                   <TableCell className="text-slate-700 text-sm">
                     {order.totalBoxesCount} кор. {order.totalPalletsCount ? `/ ${order.totalPalletsCount} палл.` : ''}

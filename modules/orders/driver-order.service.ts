@@ -24,17 +24,20 @@ export const DRIVER_ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
 export const ACTIVE_DRIVER_STATUSES: OrderStatus[] = [
   OrderStatus.ASSIGNED_TO_DRIVER,
   OrderStatus.ACCEPTED_BY_DRIVER,
-  OrderStatus.PICKED_UP,
-  OrderStatus.IN_TRANSIT,
-  OrderStatus.DELIVERED_TO_WAREHOUSE,
 ];
 
 export const COMPLETED_DRIVER_STATUSES: OrderStatus[] = [
+  OrderStatus.PICKED_UP,
+  OrderStatus.IN_TRANSIT,
+  OrderStatus.DELIVERED_TO_WAREHOUSE,
   OrderStatus.ACCEPTED_BY_MARKETPLACE,
   OrderStatus.COMPLETED,
 ];
 
 export class DriverOrderService {
+  public static readonly ACTIVE_DRIVER_STATUSES = ACTIVE_DRIVER_STATUSES;
+  public static readonly COMPLETED_DRIVER_STATUSES = COMPLETED_DRIVER_STATUSES;
+
   /**
    * Lists all active orders assigned to a specific driver.
    */
@@ -52,6 +55,10 @@ export class DriverOrderService {
         orderBy: { scheduledPickupAt: 'asc' },
         include: {
           warehouse: true,
+          destinations: {
+            include: { warehouse: true },
+            orderBy: { createdAt: 'asc' },
+          },
           client: {
             select: {
               companyName: true,
@@ -88,6 +95,10 @@ export class DriverOrderService {
         take: limit,
         include: {
           warehouse: true,
+          destinations: {
+            include: { warehouse: true },
+            orderBy: { createdAt: 'asc' },
+          },
           client: {
             select: {
               companyName: true,
@@ -174,11 +185,15 @@ export class DriverOrderService {
       throw new ForbiddenError('Заявка не назначена данному водителю');
     }
 
-    // Idempotent check: if already in the target status, return cleanly without duplicating records
-    if (order.status === targetStatus) {
+    // Idempotent check: if already in the target status or advanced past it, return cleanly without duplicating records
+    if (
+      order.status === targetStatus ||
+      (targetStatus === OrderStatus.PICKED_UP && COMPLETED_DRIVER_STATUSES.includes(order.status)) ||
+      (targetStatus === OrderStatus.ACCEPTED_BY_DRIVER && (order.status === OrderStatus.ACCEPTED_BY_DRIVER || COMPLETED_DRIVER_STATUSES.includes(order.status)))
+    ) {
       logger.info(
-        { orderId, targetStatus },
-        'Idempotent status update: order is already in target status'
+        { orderId, targetStatus, currentStatus: order.status },
+        'Idempotent status update: order is already in target or subsequent completed status'
       );
       return { success: true, order, isIdempotent: true };
     }

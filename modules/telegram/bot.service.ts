@@ -229,7 +229,12 @@ export class TelegramBotService {
                 ],
               },
             },
-            include: { warehouse: true },
+            include: {
+              warehouse: true,
+              destinations: {
+                include: { warehouse: true },
+              },
+            },
             orderBy: { createdAt: 'desc' },
             take: 5,
           });
@@ -264,8 +269,11 @@ export class TelegramBotService {
               ord.totalPalletsCount > 0
                 ? `${ord.totalBoxesCount} кор., ${ord.totalPalletsCount} палл.`
                 : `${ord.totalBoxesCount} кор.`;
+            const whName = ord.destinations && ord.destinations.length > 0
+              ? ord.destinations.map((d) => d.isCustomWarehouse ? (d.customWarehouseName || 'Инд. склад') : (d.warehouse?.name || 'Склад')).join(', ')
+              : (ord.warehouse?.name || '—');
             lines.push(
-              `• <code>${ord.orderNumber}</code> → <b>${ord.warehouse.name}</b> (${ord.marketplace})\n  Статус: <b>${statusLabel}</b> (${cargo})\n`
+              `• <code>${ord.orderNumber}</code> → <b>${whName}</b> (${ord.marketplace})\n  Статус: <b>${statusLabel}</b> (${cargo})\n`
             );
           }
 
@@ -984,35 +992,49 @@ export class TelegramBotService {
           ? `${order.totalPalletsCount} палл. (${order.totalBoxesCount} кор.)`
           : `${order.totalBoxesCount} кор.`;
 
+      let warehouseDisplay = '';
+      if (order.destinations && order.destinations.length > 0) {
+        const destLines = order.destinations.map((d: any) => {
+          const whName = d.isCustomWarehouse
+            ? `[Инд.] ${d.customWarehouseName?.trim() || 'Индивидуальный склад'}`
+            : d.warehouse?.name || 'Склад';
+          const cargo =
+            d.palletsCount > 0
+              ? `${d.boxesCount} кор., ${d.palletsCount} палл.`
+              : `${d.boxesCount} кор.`;
+          const dDate = d.deliveryDate ? new Date(d.deliveryDate).toLocaleDateString('ru-RU') : '';
+          return `  • ${whName}: <b>${cargo}</b>${dDate ? ` (${dDate})` : ''}`;
+        });
+        warehouseDisplay = `🏢 <b>Склады назначения:</b>\n${destLines.join('\n')}`;
+      } else {
+        warehouseDisplay = `🏢 <b>Склад:</b> ${order.warehouse?.name || 'Склад'} (${order.marketplace})`;
+      }
+
       const lines = [
-        `📦 <b>Заявка:</b> <code>${order.orderNumber}</code>`,
-        `🏢 <b>Склад:</b> ${order.warehouse.name} (${order.marketplace})`,
+        `📦 <b>Заявка:</b> <code>#${order.orderNumber}</code>`,
+        warehouseDisplay,
         `🏢 <b>Клиент:</b> ${order.client.companyName}`,
         order.client.contactPhone ? `📞 <b>Телефон:</b> <code>${order.client.contactPhone}</code>` : '',
         `📅 <b>Дата:</b> ${deliveryDateStr}`,
-        `📦 <b>Объём:</b> ${cargoStr}`,
-        `📍 <b>Адрес:</b> ${order.pickupCity ? `${order.pickupCity}, ` : ''}${order.pickupAddress}`,
+        `📦 <b>Общий объём:</b> ${cargoStr}`,
+        order.pickupAddress
+          ? `📍 <b>Адрес:</b> ${order.pickupCity ? `${order.pickupCity}, ` : ''}${order.pickupAddress}`
+          : '',
         assignment?.notes ? `💬 <b>Инструкция менеджера:</b> <i>${assignment.notes}</i>` : '',
         `📌 <b>Текущий статус:</b> <b>${STATUS_LABELS[order.status] || order.status}</b>`,
       ].filter(Boolean);
 
       const buttons: Array<Array<{ text: string; callback_data: string }>> = [];
 
+      // Simplified Driver Workflow (Requirement 6):
+      // Stage 1: Assigned -> Only "Принять"
+      // Stage 2: Accepted -> Only "Забрал" (and photo attachment)
       if (order.status === OrderStatus.ASSIGNED_TO_DRIVER) {
-        buttons.push([{ text: '✅ Принять заявку', callback_data: `cb:accept:${order.id}` }]);
+        buttons.push([{ text: '✅ Принять', callback_data: `cb:accept:${order.id}` }]);
       } else if (order.status === OrderStatus.ACCEPTED_BY_DRIVER) {
         buttons.push([
-          { text: '📦 Забрал груз', callback_data: `cb:picked:${order.id}` },
+          { text: '📦 Забрал', callback_data: `cb:picked:${order.id}` },
           { text: '📸 Фото приёмки', callback_data: `cb:photo:pickup:${order.id}` },
-        ]);
-      } else if (order.status === OrderStatus.PICKED_UP) {
-        buttons.push([{ text: '🚚 В пути', callback_data: `cb:transit:${order.id}` }]);
-      } else if (order.status === OrderStatus.IN_TRANSIT) {
-        buttons.push([{ text: '🏢 Прибыл на склад', callback_data: `cb:delivered:${order.id}` }]);
-      } else if (order.status === OrderStatus.DELIVERED_TO_WAREHOUSE) {
-        buttons.push([
-          { text: '📋 Передал груз', callback_data: `cb:handed:${order.id}` },
-          { text: '📸 Фото сдачи', callback_data: `cb:photo:wh:${order.id}` },
         ]);
       }
 
@@ -1049,8 +1071,19 @@ export class TelegramBotService {
 
     for (const o of orders) {
       const dateStr = new Date(o.updatedAt).toLocaleDateString('ru-RU');
+      const whTitle =
+        o.destinations && o.destinations.length > 0
+          ? o.destinations
+              .map((d: any) =>
+                d.isCustomWarehouse
+                  ? `[Инд.] ${d.customWarehouseName || 'Индивидуальный'}`
+                  : d.warehouse?.name || 'Склад'
+              )
+              .join(', ')
+          : o.warehouse?.name || 'Склад';
+
       lines.push(
-        `✓ <code>${o.orderNumber}</code> • ${o.warehouse.name} (${o.client.companyName}) • ${dateStr}`
+        `✓ <code>#${o.orderNumber}</code> • ${whTitle} (${o.client.companyName}) • ${dateStr}`
       );
     }
 
@@ -1089,7 +1122,7 @@ export class TelegramBotService {
           chatId: tgId,
           text: res.isIdempotent
             ? `ℹ️ Заявка уже была принята ранее.`
-            : `✅ Вы успешно приняли заявку в работу! Направляйтесь на склад селлера для забора груза.`,
+            : `✅ Вы успешно приняли заявку в работу! Направляйтесь на склад для забора груза.`,
           parseMode: 'HTML',
         });
         await this.sendActiveOrdersList(driverProfileId, tgId);
@@ -1105,62 +1138,20 @@ export class TelegramBotService {
         await client.sendMessage({
           chatId: tgId,
           text: res.isIdempotent
-            ? `ℹ️ Заявка уже отмечена как забранная.`
-            : `📦 Статус обновлён: <b>Груз забран у селлера</b>. При отправлении нажмите «В пути».`,
+            ? `ℹ️ Заявка уже отмечена как забранная и перенесена в историю доставок.`
+            : `📦 <b>Груз забран!</b>\nВодительский этап завершён. Рейс перенесён в историю доставок. Спасибо за отличную работу!`,
           parseMode: 'HTML',
         });
         await this.sendActiveOrdersList(driverProfileId, tgId);
         return;
       }
 
-      if (action === 'transit') {
-        const res = await DriverOrderService.updateDriverOrderStatus(
-          driverProfileId,
-          orderId,
-          OrderStatus.IN_TRANSIT
-        );
+      // Legacy callback handlers (graceful backward-compatibility):
+      if (action === 'transit' || action === 'delivered' || action === 'handed') {
         await client.sendMessage({
           chatId: tgId,
-          text: res.isIdempotent
-            ? `ℹ️ Заявка уже в пути.`
-            : `🚚 Статус обновлён: <b>В пути</b>. По прибытии на склад маркетплейса нажмите «Прибыл на склад».`,
-          parseMode: 'HTML',
+          text: `ℹ️ Этот рейс перенесён в историю доставок. Дальнейшие этапы контролируются логистом в диспетчерской.`,
         });
-        await this.sendActiveOrdersList(driverProfileId, tgId);
-        return;
-      }
-
-      if (action === 'delivered') {
-        const res = await DriverOrderService.updateDriverOrderStatus(
-          driverProfileId,
-          orderId,
-          OrderStatus.DELIVERED_TO_WAREHOUSE
-        );
-        await client.sendMessage({
-          chatId: tgId,
-          text: res.isIdempotent
-            ? `ℹ️ Заявка уже отмечена прибывшей на склад.`
-            : `🏢 Статус обновлён: <b>Прибыл на склад</b>. После сдачи партии на воротах и подписания отгрузки нажмите «Передал груз».`,
-          parseMode: 'HTML',
-        });
-        await this.sendActiveOrdersList(driverProfileId, tgId);
-        return;
-      }
-
-      if (action === 'handed') {
-        const res = await DriverOrderService.updateDriverOrderStatus(
-          driverProfileId,
-          orderId,
-          OrderStatus.ACCEPTED_BY_MARKETPLACE
-        );
-        await client.sendMessage({
-          chatId: tgId,
-          text: res.isIdempotent
-            ? `ℹ️ Заявка уже завершена.`
-            : `🎉 <b>Груз успешно сдан!</b> Рейс завершён. Спасибо за отличную работу!`,
-          parseMode: 'HTML',
-        });
-        await this.sendActiveOrdersList(driverProfileId, tgId);
         return;
       }
 

@@ -14,6 +14,22 @@ export interface DriverNotificationDispatchResult {
   warning?: string;
 }
 
+function getOrderWarehouseName(order: {
+  warehouse?: { name: string; code?: string } | null;
+  destinations?: Array<{
+    isCustomWarehouse?: boolean;
+    customWarehouseName?: string | null;
+    warehouse?: { name: string } | null;
+  }>;
+}): string {
+  if (order.destinations && order.destinations.length > 0) {
+    return order.destinations
+      .map((d) => (d.isCustomWarehouse ? d.customWarehouseName || 'Индивидуальный склад' : d.warehouse?.name || 'Склад'))
+      .join(', ');
+  }
+  return order.warehouse?.name || 'Склад не указан';
+}
+
 export class NotificationDispatcherService {
   /**
    * Notifies the manager group when a new order is registered.
@@ -26,6 +42,9 @@ export class NotificationDispatcherService {
         where: { id: orderId },
         include: {
           warehouse: true,
+          destinations: {
+            include: { warehouse: true },
+          },
           client: {
             include: {
               user: {
@@ -48,7 +67,7 @@ export class NotificationDispatcherService {
         orderId: order.id,
         orderNumber: order.orderNumber,
         marketplace: order.marketplace,
-        warehouseName: order.warehouse.name,
+        warehouseName: getOrderWarehouseName(order),
       });
 
       // 1. Notify Client via Client Bot (@AliBrosClientBot) if linked
@@ -68,7 +87,7 @@ export class NotificationDispatcherService {
           ``,
           `Номер заявки: <code>#${order.orderNumber}</code>`,
           `Маркетплейс: <b>${order.marketplace}</b>`,
-          `Склад назначения: <b>${order.warehouse.name}</b>`,
+          `Склад назначения: <b>${getOrderWarehouseName(order)}</b>`,
           `Планируемая дата: <b>${pickupDateStr}</b>`,
           `Объём поставки: <b>${cargoStr}</b>`,
           ``,
@@ -83,7 +102,7 @@ export class NotificationDispatcherService {
       }
 
       const confirmedWh = CONFIRMED_WAREHOUSES.find(
-        (c) => c.id === order.warehouseId || c.code === order.warehouse.code
+        (c) => c.id === order.warehouseId || (order.warehouse && c.code === order.warehouse.code)
       );
       const isStandardDay =
         confirmedWh && order.scheduledPickupAt
@@ -98,7 +117,7 @@ export class NotificationDispatcherService {
         orderId: order.id,
         orderNumber: order.orderNumber,
         marketplace: order.marketplace,
-        warehouseName: order.warehouse.name,
+        warehouseName: getOrderWarehouseName(order),
         scheduledPickupAt: order.scheduledPickupAt,
         totalBoxesCount: order.totalBoxesCount,
         totalPalletsCount: order.totalPalletsCount,
@@ -140,16 +159,40 @@ export class NotificationDispatcherService {
     try {
       const order = await prisma.order.findUnique({
         where: { id: orderId },
-        include: { warehouse: true },
+        include: {
+          warehouse: true,
+          destinations: {
+            include: { warehouse: true },
+            orderBy: { createdAt: 'asc' },
+          },
+        },
       });
 
       if (!order) return false;
+
+      const destinationsSummary =
+        order.destinations && order.destinations.length > 0
+          ? order.destinations
+              .map((d) => {
+                const whName = d.isCustomWarehouse
+                  ? `[Инд.] ${d.customWarehouseName?.trim() || 'Индивидуальный склад'}`
+                  : d.warehouse?.name || 'Склад';
+                const dDate = d.deliveryDate ? new Date(d.deliveryDate).toLocaleDateString('ru-RU') : '';
+                const cargo =
+                  d.palletsCount > 0
+                    ? `${d.boxesCount} кор., ${d.palletsCount} палл.`
+                    : `${d.boxesCount} кор.`;
+                return `• ${whName}: ${cargo}${dDate ? ` (${dDate})` : ''}`;
+              })
+              .join('\n')
+          : undefined;
 
       await TelegramNotificationService.notifyGroupEvent('ORDER_CONFIRMED', {
         orderId: order.id,
         orderNumber: order.orderNumber,
         marketplace: order.marketplace,
-        warehouseName: order.warehouse.name,
+        warehouseName: order.warehouse?.name || 'Склад',
+        destinationsSummary,
         scheduledPickupAt: order.scheduledPickupAt,
         totalBoxesCount: order.totalBoxesCount,
         totalPalletsCount: order.totalPalletsCount,
@@ -172,7 +215,12 @@ export class NotificationDispatcherService {
     try {
       const order = await prisma.order.findUnique({
         where: { id: orderId },
-        include: { warehouse: true },
+        include: {
+          warehouse: true,
+          destinations: {
+            include: { warehouse: true },
+          },
+        },
       });
 
       if (!order) return false;
@@ -181,7 +229,7 @@ export class NotificationDispatcherService {
         orderId: order.id,
         orderNumber: order.orderNumber,
         marketplace: order.marketplace,
-        warehouseName: order.warehouse.name,
+        warehouseName: getOrderWarehouseName(order),
         scheduledPickupAt: order.scheduledPickupAt,
         totalBoxesCount: order.totalBoxesCount,
         totalPalletsCount: order.totalPalletsCount,
@@ -211,6 +259,9 @@ export class NotificationDispatcherService {
           where: { id: orderId },
           include: {
             warehouse: true,
+            destinations: {
+              include: { warehouse: true },
+            },
             client: {
               include: {
                 user: {
@@ -242,21 +293,12 @@ export class NotificationDispatcherService {
         type: NotificationType.DRIVER_ASSIGNED,
         channel: NotificationChannel.TELEGRAM,
         title: `Назначен рейс: ${order.orderNumber}`,
-        body: `Склад: ${order.warehouse.name}. Груз: ${order.totalBoxesCount} кор., ${order.totalPalletsCount} палл.`,
+        body: `Склад: ${getOrderWarehouseName(order)}. Груз: ${order.totalBoxesCount} кор., ${order.totalPalletsCount} палл.`,
         payload: { orderId, orderNumber: order.orderNumber },
       }).catch((e) => logger.warn({ err: e }, 'Could not record driver notification in DB'));
 
-      // 2. Notify manager group about driver assignment
-      await TelegramNotificationService.notifyGroupEvent('DRIVER_ASSIGNED', {
-        orderId: order.id,
-        orderNumber: order.orderNumber,
-        marketplace: order.marketplace,
-        warehouseName: order.warehouse.name,
-        scheduledPickupAt: order.scheduledPickupAt,
-        totalBoxesCount: order.totalBoxesCount,
-        totalPalletsCount: order.totalPalletsCount,
-        driverName: driver.fullName,
-      }).catch((e) => safeLogError(e, 'Failed to dispatch DRIVER_ASSIGNED group notification'));
+      // 2. Note: Per Requirement 2, driver assignment is NOT dispatched to the manager group chat.
+      // The group chat retains strictly the initial confirmed order card.
 
       // 3. Notify Client via Client Bot
       const clientTg = order.client?.user?.telegramAccount;
@@ -276,7 +318,7 @@ export class NotificationDispatcherService {
           `🚛 <b>На вашу заявку назначен водитель!</b>`,
           ``,
           `Заявка: <code>#${order.orderNumber}</code>`,
-          `Склад: <b>${order.warehouse.name}</b> (${order.marketplace})`,
+          `Склад: <b>${getOrderWarehouseName(order)}</b> (${order.marketplace})`,
           ``,
           driverDetails,
           ``,
@@ -324,7 +366,7 @@ export class NotificationDispatcherService {
         `🚛 <b>Вам назначен новый рейс!</b>`,
         ``,
         `📦 <b>Заявка:</b> <code>${order.orderNumber}</code>`,
-        `🏢 <b>Склад:</b> ${order.warehouse.name} (${order.marketplace})`,
+        `🏢 <b>Склад:</b> ${getOrderWarehouseName(order)} (${order.marketplace})`,
         `📅 <b>Дата:</b> ${pickupDateStr}`,
         `📦 <b>Груз:</b> ${cargoStr}`,
         `📍 <b>Адрес забора:</b> ${order.pickupCity ? `${order.pickupCity}, ` : ''}${order.pickupAddress}`,
@@ -427,6 +469,9 @@ export class NotificationDispatcherService {
         where: { id: orderId },
         include: {
           warehouse: true,
+          destinations: {
+            include: { warehouse: true },
+          },
           client: {
             include: {
               user: {
@@ -454,7 +499,7 @@ export class NotificationDispatcherService {
           `💰 <b>Рассчитана стоимость доставки</b>`,
           ``,
           `Заявка: <code>${order.orderNumber}</code>`,
-          `Склад: <b>${order.warehouse.name}</b>`,
+          `Склад: <b>${getOrderWarehouseName(order)}</b>`,
           `Итоговая стоимость: <b>${formattedCost} ${currency}</b>`,
         ].join('\n');
 
@@ -498,6 +543,9 @@ export class NotificationDispatcherService {
             },
           },
           warehouse: true,
+          destinations: {
+            include: { warehouse: true },
+          },
           assignments: {
             where: {
               status: {
@@ -533,8 +581,8 @@ export class NotificationDispatcherService {
           const statusDescriptions: Partial<Record<OrderStatus, string>> = {
             [OrderStatus.ACCEPTED_BY_DRIVER]: 'Водитель принял рейс в работу и выехал на забор груза.',
             [OrderStatus.PICKED_UP]: 'Груз забран у селлера. Подготовка к транспортировке на склад.',
-            [OrderStatus.IN_TRANSIT]: `Машина с грузом в пути на склад маркетплейса (${order.warehouse.name}).`,
-            [OrderStatus.DELIVERED_TO_WAREHOUSE]: `Груз доставлен на склад маркетплейса (${order.warehouse.name}). Ожидание разгрузки.`,
+            [OrderStatus.IN_TRANSIT]: `Машина с грузом в пути на склад маркетплейса (${getOrderWarehouseName(order)}).`,
+            [OrderStatus.DELIVERED_TO_WAREHOUSE]: `Груз доставлен на склад маркетплейса (${getOrderWarehouseName(order)}). Ожидание разгрузки.`,
             [OrderStatus.ACCEPTED_BY_MARKETPLACE]: 'Партия успешно сдана и принята маркетплейсом на воротах склада!',
             [OrderStatus.COMPLETED]: 'Услуга доставки оказана в полном объёме. Заявка закрыта.',
             [OrderStatus.REJECTED_BY_MANAGER]: comment ? `Заявка отклонена: ${comment}` : 'Заявка отклонена менеджером.',
@@ -546,7 +594,7 @@ export class NotificationDispatcherService {
             `📦 <b>Статус доставки обновлён</b>`,
             ``,
             `Заявка: <code>#${order.orderNumber}</code>`,
-            `Склад назначения: <b>${order.warehouse.name}</b> (${order.marketplace})`,
+            `Склад назначения: <b>${getOrderWarehouseName(order)}</b> (${order.marketplace})`,
             `Новый статус: <b>${newStatusLabel}</b>`,
             extraStatusNote ? `\n<i>${extraStatusNote}</i>` : '',
           ]
@@ -562,39 +610,14 @@ export class NotificationDispatcherService {
         }
       }
 
-      // 3. Map status to group lifecycle event
-      // Requirement: Orders rejected prior to confirmation must NEVER reach the group chat.
-      const statusToGroupEventMap: Partial<Record<OrderStatus, TelegramGroupEventType>> = {
-        [OrderStatus.CONFIRMED]: 'ORDER_CONFIRMED',
-        ...(fromStatus !== OrderStatus.CREATED ? { [OrderStatus.REJECTED_BY_MANAGER]: 'ORDER_REJECTED' as TelegramGroupEventType } : {}),
-        [OrderStatus.ACCEPTED_BY_DRIVER]: 'DRIVER_ACCEPTED',
-        [OrderStatus.PICKED_UP]: 'CARGO_PICKED_UP',
-        [OrderStatus.IN_TRANSIT]: 'IN_TRANSIT',
-        [OrderStatus.DELIVERED_TO_WAREHOUSE]: 'DELIVERED_TO_WAREHOUSE',
-        [OrderStatus.ACCEPTED_BY_MARKETPLACE]: 'ACCEPTED_BY_MARKETPLACE',
-        [OrderStatus.COMPLETED]: 'ORDER_COMPLETED',
-      };
+      // 3. Strict Requirement 2:
+      // The AliBros shipping group topic (#8) receives ONLY the initial confirmed order card upon manager approval.
+      // All subsequent lifecycle and driver events (DRIVER_ACCEPTED, PICKED_UP, IN_TRANSIT, DELIVERED, COMPLETED)
+      // are NEVER dispatched to the group chat. The initial confirmed card remains clean and standalone.
 
-      const groupEventType = statusToGroupEventMap[toStatus];
-      if (groupEventType) {
-        const activeDriverName = order.assignments[0]?.driver?.fullName;
-        await TelegramNotificationService.notifyGroupEvent(groupEventType, {
-          orderId: order.id,
-          orderNumber: order.orderNumber,
-          marketplace: order.marketplace,
-          warehouseName: order.warehouse.name,
-          scheduledPickupAt: order.scheduledPickupAt,
-          totalBoxesCount: order.totalBoxesCount,
-          totalPalletsCount: order.totalPalletsCount,
-          driverName: activeDriverName,
-          managerComment: comment,
-          rejectionReason: toStatus === OrderStatus.REJECTED_BY_MANAGER ? comment : undefined,
-        }).catch((e) => safeLogError(e, 'Failed to dispatch status change group notification'));
-      }
-
-        logger.info(
+      logger.info(
         { orderId, fromStatus, toStatus, changedByUserId },
-        'Dispatched status change notifications'
+        'Dispatched status change notifications (group status messages suppressed per Requirement 2)'
       );
 
       // 4. Synchronize status change to Google Sheets (Safe non-blocking)
