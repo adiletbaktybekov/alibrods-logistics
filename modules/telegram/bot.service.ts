@@ -162,6 +162,20 @@ export class TelegramBotService {
       const text = msg.text?.trim() || '';
       const appUrl = getCanonicalAppUrl();
 
+      // Ensure native Telegram Menu Button is set to Web App for this client
+      clientBot
+        .setChatMenuButton({
+          chatId: tgId,
+          menuButton: {
+            type: 'web_app',
+            text: 'Открыть приложение',
+            web_app: { url: `${appUrl}/miniapp` },
+          },
+        })
+        .catch((err) => {
+          logger.warn({ err, tgId }, 'Failed to setChatMenuButton for client');
+        });
+
       // 1. Check if client sent pairing code, e.g. "/start ABL-123456" or "ABL-123456"
       let pairingCode: string | null = null;
       const startMatch = text.match(/^\/start(?:@\w+)?(?:\s+|=)(.+)$/i);

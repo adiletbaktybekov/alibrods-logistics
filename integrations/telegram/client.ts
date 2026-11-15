@@ -25,6 +25,20 @@ export interface SendTelegramPhotoOptions {
   messageThreadId?: number | string;
 }
 
+export interface TelegramMenuButton {
+  type: 'default' | 'commands' | 'web_app';
+  text?: string;
+  web_app?: {
+    url: string;
+  };
+}
+
+export interface SetChatMenuButtonOptions {
+  chatId?: number | string;
+  menuButton?: TelegramMenuButton;
+}
+
+
 export class TelegramBotClient {
   private readonly botToken: string;
   private readonly baseUrl: string;
@@ -418,7 +432,97 @@ export class TelegramBotClient {
       return null;
     }
   }
+
+  /**
+   * Sets the menu button for a private chat or default.
+   */
+  public async setChatMenuButton(options?: SetChatMenuButtonOptions): Promise<boolean> {
+    if (!this.botToken) {
+      logger.warn('Telegram bot token not configured. Skipping setChatMenuButton.');
+      return false;
+    }
+
+    try {
+      const body: Record<string, unknown> = {};
+      if (options?.chatId !== undefined && options?.chatId !== null) {
+        body.chat_id = options.chatId;
+      }
+      if (options?.menuButton) {
+        body.menu_button = options.menuButton;
+      }
+
+      const response = await fetch(`${this.baseUrl}/setChatMenuButton`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        logger.error({ data, options }, 'Failed to setChatMenuButton in Telegram API');
+        return false;
+      }
+
+      return true;
+    } catch (err) {
+      logger.error({ err, options }, 'Network error while calling Telegram setChatMenuButton API');
+      return false;
+    }
+  }
+
+  /**
+   * Gets the menu button for a private chat or default.
+   */
+  public async getChatMenuButton(chatId?: number | string): Promise<TelegramMenuButton | null> {
+    if (!this.botToken) {
+      logger.warn('Telegram bot token not configured. Skipping getChatMenuButton.');
+      return null;
+    }
+
+    try {
+      const body: Record<string, unknown> = {};
+      if (chatId !== undefined && chatId !== null) {
+        body.chat_id = chatId;
+      }
+
+      const response = await fetch(`${this.baseUrl}/getChatMenuButton`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.ok || !data.result) {
+        logger.error({ data, chatId }, 'Failed to getChatMenuButton from Telegram API');
+        return null;
+      }
+
+      return data.result as TelegramMenuButton;
+    } catch (err) {
+      logger.error({ err, chatId }, 'Network error while calling Telegram getChatMenuButton API');
+      return null;
+    }
+  }
+
+  /**
+   * Sets bot commands in Telegram.
+   */
+  public async setMyCommands(commands: Array<{ command: string; description: string }>): Promise<boolean> {
+    if (!this.botToken) return false;
+    try {
+      const response = await fetch(`${this.baseUrl}/setMyCommands`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ commands }),
+      });
+      const data = await response.json();
+      return Boolean(response.ok && data.ok);
+    } catch {
+      return false;
+    }
+  }
 }
+
 
 let driverBotInstance: TelegramBotClient | null = null;
 let clientBotInstance: TelegramBotClient | null = null;

@@ -170,4 +170,111 @@ describe('Telegram Mini App for Clients', () => {
       ).toThrow('не работает в воскресенье');
     });
   });
+
+  describe('4. TelegramBotClient Menu Button & Commands API', () => {
+    it('should send correct payload for setChatMenuButton with web_app', async () => {
+      const { TelegramBotClient } = await import('@/integrations/telegram/client');
+      const client = new TelegramBotClient(TEST_BOT_TOKEN);
+
+      let capturedUrl = '';
+      let capturedBody: any = null;
+
+      const originalFetch = global.fetch;
+      global.fetch = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+        capturedUrl = url;
+        capturedBody = init?.body ? JSON.parse(init.body as string) : null;
+        return {
+          ok: true,
+          json: async () => ({ ok: true, result: true }),
+        } as Response;
+      });
+
+      try {
+        const success = await client.setChatMenuButton({
+          chatId: 12345678,
+          menuButton: {
+            type: 'web_app',
+            text: 'Открыть приложение',
+            web_app: {
+              url: 'https://www.alibros.ru/miniapp',
+            },
+          },
+        });
+
+        expect(success).toBe(true);
+        expect(capturedUrl).toContain('/setChatMenuButton');
+        expect(capturedBody).toEqual({
+          chat_id: 12345678,
+          menu_button: {
+            type: 'web_app',
+            text: 'Открыть приложение',
+            web_app: {
+              url: 'https://www.alibros.ru/miniapp',
+            },
+          },
+        });
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
+
+    it('should query getChatMenuButton and parse result', async () => {
+      const { TelegramBotClient } = await import('@/integrations/telegram/client');
+      const client = new TelegramBotClient(TEST_BOT_TOKEN);
+
+      const originalFetch = global.fetch;
+      global.fetch = vi.fn().mockImplementation(async () => {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            result: {
+              type: 'web_app',
+              text: 'Открыть приложение',
+              web_app: { url: 'https://www.alibros.ru/miniapp' },
+            },
+          }),
+        } as Response;
+      });
+
+      try {
+        const result = await client.getChatMenuButton(12345678);
+        expect(result).not.toBeNull();
+        expect(result?.type).toBe('web_app');
+        expect(result?.text).toBe('Открыть приложение');
+        expect(result?.web_app?.url).toBe('https://www.alibros.ru/miniapp');
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
+
+    it('should set bot commands via setMyCommands', async () => {
+      const { TelegramBotClient } = await import('@/integrations/telegram/client');
+      const client = new TelegramBotClient(TEST_BOT_TOKEN);
+
+      let capturedBody: any = null;
+      const originalFetch = global.fetch;
+      global.fetch = vi.fn().mockImplementation(async (_url: string, init?: RequestInit) => {
+        capturedBody = init?.body ? JSON.parse(init.body as string) : null;
+        return {
+          ok: true,
+          json: async () => ({ ok: true, result: true }),
+        } as Response;
+      });
+
+      try {
+        const success = await client.setMyCommands([
+          { command: 'start', description: 'Запустить' },
+          { command: 'orders', description: 'Заявки' },
+        ]);
+
+        expect(success).toBe(true);
+        expect(capturedBody?.commands).toHaveLength(2);
+        expect(capturedBody?.commands[0].command).toBe('start');
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
+  });
 });
+
