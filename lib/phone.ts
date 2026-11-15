@@ -1,71 +1,199 @@
 import { z } from 'zod';
 
+export interface PhoneValidationResult {
+  isValid: boolean;
+  error?: string;
+  normalized?: string;
+  nationalPart?: string;
+}
+
 /**
- * Normalizes a raw phone input into canonical E.164 +7 format: +7XXXXXXXXXX (11 digits).
- * Handles inputs with spaces, parentheses, dashes, leading 8, 7 without +, or 10 digits starting with 9.
+ * Validates a raw phone input against strict rules:
+ * - Fixed +7 country code.
+ * - Exactly 10 digits after +7.
+ * - First national digit cannot be 0 (e.g. mobile 9XX).
+ * - Disallow +996 / 996.
+ * - Disallow duplicate +7 (+7+7, +7 7...).
+ * - Do NOT silently rewrite invalid country codes into +7.
+ */
+export function validatePhoneNumber(raw?: string | null): PhoneValidationResult {
+  if (!raw || !raw.trim()) {
+    return { isValid: false, error: 'Номер Telegram обязателен' };
+  }
+
+  const trimmed = raw.trim();
+
+  // 1. Check for forbidden Kyrgyzstan prefix (+996 or 996)
+  if (trimmed.startsWith('+996') || trimmed.startsWith('996')) {
+    return {
+      isValid: false,
+      error: 'Номера с кодом +996 не поддерживаются. Пожалуйста, укажите номер с кодом +7',
+    };
+  }
+
+  // 2. Check for duplicate country code in raw string
+  const plusMatches = trimmed.match(/\+/g);
+  if (plusMatches && plusMatches.length > 1) {
+    return {
+      isValid: false,
+      error: 'Некорректный формат: обнаружено несколько кодов страны в номере',
+    };
+  }
+
+  // Extract all digits
+  const allDigits = trimmed.replace(/\D/g, '');
+
+  // Check if user entered duplicate 7s at start like "77955..." or "+77..."
+  if (trimmed.startsWith('+77') || trimmed.startsWith('+7 7') || trimmed.startsWith('77') && allDigits.length === 12) {
+    return {
+      isValid: false,
+      error: 'Некорректный формат: код страны +7 указан повторно',
+    };
+  }
+
+  let nationalDigits = '';
+
+  if (trimmed.startsWith('+7')) {
+    nationalDigits = allDigits.slice(1);
+  } else if (allDigits.length === 11 && (allDigits.startsWith('7') || allDigits.startsWith('8'))) {
+    nationalDigits = allDigits.slice(1);
+  } else if (allDigits.length === 10) {
+    nationalDigits = allDigits;
+  } else {
+    // If digits count is less or more
+    if (allDigits.length < 10) {
+      return {
+        isValid: false,
+        error: 'Неполный номер: после +7 должно быть ровно 10 цифр',
+      };
+    }
+    return {
+      isValid: false,
+      error: 'Некорректная длина номера: после +7 должно быть ровно 10 цифр',
+    };
+  }
+
+  // 3. National part must be exactly 10 digits
+  if (nationalDigits.length !== 10) {
+    return {
+      isValid: false,
+      error: `Номер должен содержать ровно 10 цифр после +7 (введено ${nationalDigits.length})`,
+    };
+  }
+
+  // 4. First digit of national part cannot be 0
+  if (nationalDigits.startsWith('0')) {
+    return {
+      isValid: false,
+      error: 'Номер не может начинаться с 0. Первая цифра номера должна быть от 1 до 9 (обычно 9)',
+    };
+  }
+
+  const normalized = `+7${nationalDigits}`;
+  return {
+    isValid: true,
+    normalized,
+    nationalPart: nationalDigits,
+  };
+}
+
+/**
+ * Normalizes phone input into canonical E.164 +7 format: +7XXXXXXXXXX.
+ * Throws or returns empty if invalid; preserves existing historical numbers starting with +996 if already stored.
  */
 export function normalizePhoneNumber(raw?: string | null): string {
   if (!raw) return '';
   const trimmed = raw.trim();
   if (!trimmed) return '';
 
-  // Extract digits and leading plus
-  let digits = trimmed.replace(/\D/g, '');
-
-  // If starts with 8 and has 11 digits (Russian local trunk) -> replace 8 with 7
-  if (digits.length === 11 && digits.startsWith('8')) {
-    digits = '7' + digits.slice(1);
-  } else if (digits.length === 10 && digits.startsWith('9')) {
-    // 10 digits starting with 9 (e.g. 9551234567) -> prefix 7
-    digits = '7' + digits;
-  } else if (digits.length === 11 && digits.startsWith('7')) {
-    // already 11 digits with 7
+  // Preserve existing historical DB numbers starting with +996 if they are already in DB
+  if (trimmed.startsWith('+996') && trimmed.replace(/\D/g, '').length >= 11) {
+    return trimmed;
   }
 
-  // If standard Russian 11 digits starting with 7
-  if (digits.length === 11 && digits.startsWith('7')) {
+  const validation = validatePhoneNumber(raw);
+  if (validation.isValid && validation.normalized) {
+    return validation.normalized;
+  }
+
+  // Fallback cleanup if already starts with +7 and 10 digits
+  const digits = trimmed.replace(/\D/g, '');
+  if (digits.length === 11 && digits.startsWith('7') && digits[1] !== '0') {
     return `+${digits}`;
   }
-
-  // Fallback: if already starts with +, keep + and digits
-  if (trimmed.startsWith('+')) {
-    return `+${digits}`;
+  if (digits.length === 10 && digits[0] !== '0') {
+    return `+7${digits}`;
   }
 
-  return digits ? `+${digits}` : '';
+  return trimmed;
 }
 
 /**
- * Formats a phone number for UI display in the unified +7 format:
+ * Formats a phone number for UI display:
  * Example: "+7 955 123-45-67"
+ * Or national 10 digits without +7: "955 123-45-67"
  */
-export function formatPhoneNumber(phone?: string | null): string {
+export function formatPhoneNumber(phone?: string | null, includeCountryCode = true): string {
   if (!phone) return '—';
-  const normalized = normalizePhoneNumber(phone);
-  if (!normalized) return '—';
+  const trimmed = phone.trim();
+  if (!trimmed) return '—';
 
-  const digits = normalized.replace(/\D/g, '');
-
-  // Standard Russian number +7 (11 digits)
-  if (digits.length === 11 && digits.startsWith('7')) {
-    const code = digits.slice(1, 4);
-    const p1 = digits.slice(4, 7);
-    const p2 = digits.slice(7, 9);
-    const p3 = digits.slice(9, 11);
-    return `+7 ${code} ${p1}-${p2}-${p3}`;
+  // Historical +996 support
+  if (trimmed.startsWith('+996')) {
+    const digits = trimmed.replace(/\D/g, '');
+    if (digits.length === 12) {
+      return `+996 ${digits.slice(3, 6)} ${digits.slice(6, 9)}-${digits.slice(9, 12)}`;
+    }
+    return trimmed;
   }
 
-  // Fallback for other lengths
-  return normalized;
+  const digits = trimmed.replace(/\D/g, '');
+
+  let national = '';
+  if (digits.length === 11 && (digits.startsWith('7') || digits.startsWith('8'))) {
+    national = digits.slice(1);
+  } else if (digits.length === 10) {
+    national = digits;
+  }
+
+  if (national.length === 10) {
+    const code = national.slice(0, 3);
+    const p1 = national.slice(3, 6);
+    const p2 = national.slice(6, 8);
+    const p3 = national.slice(8, 10);
+    const formattedNational = `${code} ${p1}-${p2}-${p3}`;
+    return includeCountryCode ? `+7 ${formattedNational}` : formattedNational;
+  }
+
+  return trimmed;
 }
 
 /**
- * Validates whether the given phone number is a valid +7 number (11 digits total).
+ * Formats raw 10 national digits into live mask: "955 123-45-67"
+ */
+export function formatNationalDigits(digits: string): string {
+  const clean = digits.replace(/\D/g, '').slice(0, 10);
+  if (!clean) return '';
+
+  let res = clean.slice(0, 3);
+  if (clean.length > 3) {
+    res += ' ' + clean.slice(3, 6);
+  }
+  if (clean.length > 6) {
+    res += '-' + clean.slice(6, 8);
+  }
+  if (clean.length > 8) {
+    res += '-' + clean.slice(8, 10);
+  }
+  return res;
+}
+
+/**
+ * Validates whether the given phone number is a valid +7 number.
  */
 export function isValidPhoneNumber(phone?: string | null): boolean {
   if (!phone) return false;
-  const normalized = normalizePhoneNumber(phone);
-  return /^\+7\d{10}$/.test(normalized);
+  return validatePhoneNumber(phone).isValid;
 }
 
 /**
@@ -74,25 +202,39 @@ export function isValidPhoneNumber(phone?: string | null): boolean {
 export const phoneSchema = z
   .string({ required_error: 'Номер Telegram обязателен' })
   .min(1, 'Номер Telegram обязателен')
-  .transform((val) => normalizePhoneNumber(val))
-  .refine(
-    (val) => isValidPhoneNumber(val),
-    {
-      message: 'Укажите корректный номер в формате +7 9XX XXX-XX-XX',
+  .superRefine((val, ctx) => {
+    const validation = validatePhoneNumber(val);
+    if (!validation.isValid) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: validation.error || 'Укажите корректный номер в формате +7 9XX XXX-XX-XX',
+      });
     }
-  );
+  })
+  .transform((val) => {
+    const validation = validatePhoneNumber(val);
+    return validation.normalized || val;
+  });
 
 /**
- * Optional phone schema (allows undefined, null, or empty string).
+ * Optional phone schema.
  */
 export const optionalPhoneSchema = z
   .string()
   .optional()
   .nullable()
-  .transform((val) => (val ? normalizePhoneNumber(val) : undefined))
-  .refine(
-    (val) => !val || isValidPhoneNumber(val),
-    {
-      message: 'Укажите корректный номер в формате +7 9XX XXX-XX-XX',
+  .superRefine((val, ctx) => {
+    if (!val || !val.trim()) return;
+    const validation = validatePhoneNumber(val);
+    if (!validation.isValid) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: validation.error || 'Укажите корректный номер в формате +7 9XX XXX-XX-XX',
+      });
     }
-  );
+  })
+  .transform((val) => {
+    if (!val || !val.trim()) return undefined;
+    const validation = validatePhoneNumber(val);
+    return validation.normalized || val;
+  });

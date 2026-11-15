@@ -92,7 +92,7 @@ export function DriverModal() {
                   name="phone"
                   label="Номер Telegram *"
                   required
-                  placeholder="+7 955 123-45-67"
+                  placeholder="955 123-45-67"
                 />
               </div>
 

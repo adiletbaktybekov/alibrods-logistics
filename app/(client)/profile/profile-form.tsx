@@ -90,7 +90,7 @@ export function ProfileForm({ client, warehouses }: ProfileFormProps) {
                 name="contactPhone"
                 label="Номер Telegram"
                 defaultValue={client.contactPhone}
-                placeholder="+7 955 123-45-67"
+                placeholder="955 123-45-67"
                 required
               />
             </div>

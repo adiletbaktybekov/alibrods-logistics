@@ -5,7 +5,7 @@ import { OrdersService } from '@/modules/orders/orders.service';
 import { DriversService } from '@/modules/drivers/drivers.service';
 import { ClientsService } from '@/modules/clients/clients.service';
 import { registerDriverSchema } from '@/modules/drivers/drivers.dto';
-import { OrderStatus, UserRole, AuditAction } from '@prisma/client';
+import { OrderStatus, UserRole, AuditAction, MarketplaceType } from '@prisma/client';
 import { ForbiddenError, UnauthorizedError } from '@/lib/errors';
 import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
@@ -304,16 +304,209 @@ export async function getGoogleSheetsStatusAction() {
   return GoogleSheetsSyncService.getStatus();
 }
 
-export async function getAdminWarehousesAction() {
+export async function getAdminWarehousesAction(includeInactive = false) {
   await requireStaffUser();
   if (!process.env.DATABASE_URL) {
     return [];
   }
   return prisma.warehouse.findMany({
-    where: { isActive: true },
-    orderBy: { name: 'asc' },
+    where: includeInactive ? {} : { isActive: true },
+    orderBy: [{ isActive: 'desc' }, { name: 'asc' }],
   });
 }
+
+export async function createWarehouseAction(dto: {
+  name: string;
+  code: string;
+  marketplace: MarketplaceType;
+  address: string;
+  city: string;
+  operatingHours?: string;
+}) {
+  const user = await requireStaffUser();
+  if (!['SUPER_ADMIN', 'ADMIN'].includes(user.role)) {
+    return { success: false, error: 'Недостаточно прав для добавления склада' };
+  }
+  if (!process.env.DATABASE_URL) {
+    return { success: false, error: 'База данных недоступна' };
+  }
+
+  try {
+    const code = dto.code.trim().toUpperCase();
+    const existing = await prisma.warehouse.findUnique({ where: { code } });
+    if (existing) {
+      return { success: false, error: `Склад с кодом ${code} уже существует (${existing.name})` };
+    }
+
+    const created = await prisma.warehouse.create({
+      data: {
+        name: dto.name.trim(),
+        code,
+        marketplace: dto.marketplace,
+        address: dto.address.trim(),
+        city: dto.city.trim(),
+        operatingHours: dto.operatingHours?.trim() || null,
+        isActive: true,
+      },
+    });
+
+    await AuditService.log({
+      userId: user.id,
+      action: AuditAction.CREATE,
+      resource: 'Warehouse',
+      resourceId: created.id,
+      metadata: { name: created.name, code: created.code },
+    });
+
+    revalidatePath('/admin/warehouses');
+    return { success: true, data: created };
+  } catch (err: unknown) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Не удалось создать склад',
+    };
+  }
+}
+
+export async function updateWarehouseAction(
+  id: string,
+  dto: {
+    name: string;
+    code: string;
+    marketplace: MarketplaceType;
+    address: string;
+    city: string;
+    operatingHours?: string;
+  }
+) {
+  const user = await requireStaffUser();
+  if (!['SUPER_ADMIN', 'ADMIN'].includes(user.role)) {
+    return { success: false, error: 'Недостаточно прав для редактирования склада' };
+  }
+  if (!process.env.DATABASE_URL) {
+    return { success: false, error: 'База данных недоступна' };
+  }
+
+  try {
+    const code = dto.code.trim().toUpperCase();
+    const existing = await prisma.warehouse.findFirst({
+      where: { code, NOT: { id } },
+    });
+    if (existing) {
+      return { success: false, error: `Код ${code} уже используется другим складом (${existing.name})` };
+    }
+
+    const updated = await prisma.warehouse.update({
+      where: { id },
+      data: {
+        name: dto.name.trim(),
+        code,
+        marketplace: dto.marketplace,
+        address: dto.address.trim(),
+        city: dto.city.trim(),
+        operatingHours: dto.operatingHours?.trim() || null,
+      },
+    });
+
+    await AuditService.log({
+      userId: user.id,
+      action: AuditAction.UPDATE,
+      resource: 'Warehouse',
+      resourceId: updated.id,
+      metadata: { name: updated.name, code: updated.code },
+    });
+
+    revalidatePath('/admin/warehouses');
+    return { success: true, data: updated };
+  } catch (err: unknown) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Не удалось обновить склад',
+    };
+  }
+}
+
+export async function toggleWarehouseActiveAction(id: string, isActive: boolean) {
+  const user = await requireStaffUser();
+  if (!['SUPER_ADMIN', 'ADMIN', 'MANAGER'].includes(user.role)) {
+    return { success: false, error: 'Недостаточно прав' };
+  }
+  if (!process.env.DATABASE_URL) {
+    return { success: false, error: 'База данных недоступна' };
+  }
+
+  try {
+    await prisma.warehouse.update({
+      where: { id },
+      data: { isActive },
+    });
+
+    await AuditService.log({
+      userId: user.id,
+      action: AuditAction.STATUS_CHANGE,
+      resource: 'Warehouse',
+      resourceId: id,
+      metadata: { isActive },
+    });
+
+    revalidatePath('/admin/warehouses');
+    return { success: true };
+  } catch (err: unknown) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Не удалось изменить статус склада',
+    };
+  }
+}
+
+export async function deleteWarehouseAction(id: string) {
+  const user = await requireStaffUser();
+  if (!['SUPER_ADMIN', 'ADMIN'].includes(user.role)) {
+    return { success: false, error: 'Недостаточно прав для удаления склада' };
+  }
+  if (!process.env.DATABASE_URL) {
+    return { success: false, error: 'База данных недоступна' };
+  }
+
+  try {
+    const ordersCount = await prisma.order.count({ where: { warehouseId: id } });
+    const destinationsCount = await prisma.orderDestination.count({ where: { warehouseId: id } });
+
+    if (ordersCount > 0 || destinationsCount > 0) {
+      return {
+        success: false,
+        error: `Склад привязан к существующим заказам (${ordersCount + destinationsCount}). Физическое удаление запрещено во избежание потери данных. Вы можете деактивировать этот склад.`,
+      };
+    }
+
+    // Safely unset default warehouse from any client profile
+    await prisma.clientProfile.updateMany({
+      where: { defaultWarehouseId: id },
+      data: { defaultWarehouseId: null },
+    });
+
+    const deleted = await prisma.warehouse.delete({
+      where: { id },
+    });
+
+    await AuditService.log({
+      userId: user.id,
+      action: AuditAction.DELETE,
+      resource: 'Warehouse',
+      resourceId: id,
+      metadata: { name: deleted.name, code: deleted.code },
+    });
+
+    revalidatePath('/admin/warehouses');
+    return { success: true };
+  } catch (err: unknown) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Не удалось удалить склад',
+    };
+  }
+}
+
 
 export async function getStaffProfileAction() {
   const staff = await requireStaffUser();
@@ -329,6 +522,7 @@ export async function getStaffProfileAction() {
       role: true,
       isActive: true,
       isVerified: true,
+      mustChangePassword: true,
       createdAt: true,
       lastLoginAt: true,
       managerProfile: {
@@ -444,6 +638,7 @@ export async function changePasswordAction(prevState: unknown, formData: FormDat
     where: { id: user.id },
     data: {
       passwordHash: newHash,
+      mustChangePassword: false,
       tokenVersion: { increment: 1 },
     },
     select: {
@@ -707,4 +902,54 @@ export async function getWarehouseStatsAction(params: {
       error: err instanceof Error ? err.message : 'Не удалось загрузить статистику складов',
     };
   }
+}
+
+export async function updateUserRoleAction(targetUserId: string, newRole: UserRole) {
+  const actor = await requireStaffUser();
+
+  // If acting user is trying to assign SUPER_ADMIN, they MUST be SUPER_ADMIN themselves
+  if (newRole === 'SUPER_ADMIN' && actor.role !== 'SUPER_ADMIN') {
+    return {
+      success: false,
+      error: 'Только Главный администратор (SUPER_ADMIN) может назначать роль SUPER_ADMIN',
+    };
+  }
+
+  // Find target user
+  const targetUser = await prisma.user.findUnique({ where: { id: targetUserId } });
+  if (!targetUser) {
+    return { success: false, error: 'Пользователь не найден' };
+  }
+
+  // If target user is already SUPER_ADMIN, regular ADMIN cannot demote or alter them
+  if (targetUser.role === 'SUPER_ADMIN' && actor.role !== 'SUPER_ADMIN') {
+    return {
+      success: false,
+      error: 'Недостаточно прав: администратор не может изменять роль или данные Главного администратора (SUPER_ADMIN)',
+    };
+  }
+
+  // Regular ADMIN can only manage roles if they have permission and target is not SUPER_ADMIN
+  if (!['SUPER_ADMIN', 'ADMIN'].includes(actor.role)) {
+    return { success: false, error: 'Недостаточно прав для изменения ролей' };
+  }
+
+  const updated = await prisma.user.update({
+    where: { id: targetUserId },
+    data: { role: newRole, tokenVersion: { increment: 1 } },
+  });
+
+  await AuditService.log({
+    userId: actor.id,
+    action: AuditAction.ROLE_CHANGE,
+    resource: 'User',
+    resourceId: targetUserId,
+    metadata: {
+      previousRole: targetUser.role,
+      newRole,
+    },
+  });
+
+  revalidatePath('/admin');
+  return { success: true, data: updated };
 }

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { formatPhoneNumber } from '@/lib/phone';
 import { prisma } from '@/database/prisma';
+import { NewsNotificationToggle } from '@/components/profile/news-notification-toggle';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,12 +20,19 @@ export default async function MiniAppProfilePage() {
 
   const { user, client } = profile;
 
-  // Check Telegram link status
+  // Check Telegram link status & notification preferences
   let tgAccount = null;
+  let userRecord = null;
   if (process.env.DATABASE_URL) {
-    tgAccount = await prisma.telegramAccount.findUnique({
-      where: { userId: user.id },
-    });
+    [tgAccount, userRecord] = await Promise.all([
+      prisma.telegramAccount.findUnique({
+        where: { userId: user.id },
+      }),
+      prisma.user.findUnique({
+        where: { id: user.id },
+        select: { allowNewsNotifications: true },
+      }),
+    ]);
   }
 
   return (
@@ -95,6 +103,10 @@ export default async function MiniAppProfilePage() {
           <p className="text-[11px] text-slate-400">
             Уведомления о смене статусов доставки приходят в этот чат автоматически.
           </p>
+
+          <div className="pt-2 border-t border-slate-100">
+            <NewsNotificationToggle initialEnabled={userRecord?.allowNewsNotifications ?? true} />
+          </div>
         </Card>
 
         {/* Logout */}

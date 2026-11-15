@@ -96,22 +96,30 @@ enum TelegramUpdateStatus {
   FAILED
 }
 
+enum NewsStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
 // ============================================================================
 // CORE IDENTITY & USER PROFILES
 // ============================================================================
 
 model User {
-  id           String    @id @default(uuid())
-  email        String?   @unique
-  phone        String?   @unique
-  passwordHash String?
-  role         UserRole  @default(CLIENT)
-  isActive     Boolean   @default(true)
-  isVerified   Boolean   @default(false)
-  tokenVersion Int       @default(1)
-  lastLoginAt  DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id                     String    @id @default(uuid())
+  email                  String?   @unique
+  phone                  String?   @unique
+  passwordHash           String?
+  role                   UserRole  @default(CLIENT)
+  isActive               Boolean   @default(true)
+  isVerified             Boolean   @default(false)
+  mustChangePassword     Boolean   @default(false)
+  allowNewsNotifications Boolean   @default(true)
+  tokenVersion           Int       @default(1)
+  lastLoginAt            DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
   // Profiles (1-to-1)
   clientProfile   ClientProfile?
@@ -128,6 +136,10 @@ model User {
   statusChanges   OrderStatusHistory[]
   uploadedPhotos  OrderPhoto[]
   notifications   Notification[]
+
+  // News relations
+  authoredNews    NewsArticle[]        @relation("NewsAuthor")
+  newsDeliveries  NewsDelivery[]
 
   @@index([role])
   @@index([phone])
@@ -572,4 +584,46 @@ model DriverPhotoSession {
   @@index([expiresAt])
   @@map("driver_photo_sessions")
 }
+
+// ============================================================================
+// NEWS & CLIENT ANNOUNCEMENTS
+// ============================================================================
+
+model NewsArticle {
+  id          String         @id @default(uuid())
+  title       String
+  content     String         @db.Text
+  imageUrl    String?
+  status      NewsStatus     @default(DRAFT)
+  publishedAt DateTime?
+  authorId    String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  author      User?          @relation("NewsAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  deliveries  NewsDelivery[]
+
+  @@index([status])
+  @@index([publishedAt])
+  @@map("news_articles")
+}
+
+model NewsDelivery {
+  id           String      @id @default(uuid())
+  newsId       String
+  userId       String
+  telegramId   BigInt?
+  status       String      @default("DELIVERED")
+  errorMessage String?
+  sentAt       DateTime    @default(now())
+
+  news         NewsArticle @relation(fields: [newsId], references: [id], onDelete: Cascade)
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([newsId, userId])
+  @@index([newsId])
+  @@index([userId])
+  @@map("news_deliveries")
+}
+
 

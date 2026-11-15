@@ -148,9 +148,9 @@ export async function linkMiniAppAccountAction(
       };
     }
 
-    // Link Telegram Account to this Client User
+    // Link Telegram Account to this Client User safely
     if (process.env.DATABASE_URL) {
-      await TelegramService.linkAccount({
+      const linkRes = await TelegramService.linkAccountSafe({
         userId: loginResult.user.id,
         telegramId: telegramIdBigInt,
         username: tgUser.username,
@@ -158,6 +158,13 @@ export async function linkMiniAppAccountAction(
         lastName: tgUser.last_name,
         languageCode: tgUser.language_code,
       });
+
+      if (!linkRes.success) {
+        return {
+          success: false,
+          error: linkRes.error,
+        };
+      }
     }
 
     // Set auth cookie

@@ -7,6 +7,7 @@ import { linkMiniAppAccountAction } from '@/app/actions/miniapp-auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { PhoneInput } from '@/components/ui/phone-input';
 
 export default function MiniAppLinkPage() {
   const router = useRouter();
@@ -69,20 +70,15 @@ export default function MiniAppLinkPage() {
       {/* Form */}
       <div className="rounded-2xl bg-white border border-slate-200 p-5 shadow-sm space-y-4">
         <form onSubmit={handleLink} className="space-y-4">
-          <div>
-            <Label htmlFor="login" className="text-xs font-semibold text-slate-700">
-              Номер Telegram *
-            </Label>
-            <Input
-              id="login"
-              type="tel"
-              required
-              value={login}
-              onChange={(e) => setLogin(e.target.value)}
-              placeholder="+7 955 123-45-67"
-              className="mt-1 text-xs"
-            />
-          </div>
+          <PhoneInput
+            id="login"
+            name="login"
+            label="Номер Telegram *"
+            required
+            value={login}
+            onChange={(val) => setLogin(val)}
+            placeholder="955 123-45-67"
+          />
 
           <div>
             <Label htmlFor="password" className="text-xs font-semibold text-slate-700">

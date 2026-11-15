@@ -306,6 +306,65 @@ export class TelegramBotService {
           return;
         }
 
+        // Linked client news handler
+        if (text === '/news' || text === '📰 Новости' || text.toLowerCase().includes('новост')) {
+          const latestNews = await prisma.newsArticle.findMany({
+            where: { status: 'PUBLISHED' },
+            orderBy: { publishedAt: 'desc' },
+            take: 3,
+          });
+
+          if (latestNews.length === 0) {
+            await clientBot.sendMessage({
+              chatId: tgId,
+              text: '📰 <b>Новостей и оповещений пока нет.</b>',
+              parseMode: 'HTML',
+              replyMarkup: {
+                inline_keyboard: [
+                  [
+                    {
+                      text: '📱 Открыть раздел новостей (Mini App)',
+                      web_app: { url: `${appUrl}/miniapp/news` },
+                    },
+                  ],
+                ],
+              },
+            });
+            return;
+          }
+
+          const lines = ['📰 <b>Новости и регламенты AliBros Logistics:</b>\n'];
+          const keyboardButtons: Array<Array<{ text: string; web_app: { url: string } }>> = [];
+
+          for (const item of latestNews) {
+            const dateStr = item.publishedAt ? new Date(item.publishedAt).toLocaleDateString('ru-RU') : '';
+            lines.push(`• <b>${item.title}</b> (${dateStr})\n${item.content.length > 200 ? item.content.slice(0, 200) + '...' : item.content}\n`);
+            keyboardButtons.push([
+              {
+                text: `📖 ${item.title.length > 30 ? item.title.slice(0, 30) + '...' : item.title}`,
+                web_app: { url: `${appUrl}/miniapp/news/${item.id}` },
+              },
+            ]);
+          }
+
+          keyboardButtons.push([
+            {
+              text: '📱 Все новости в Mini App',
+              web_app: { url: `${appUrl}/miniapp/news` },
+            },
+          ]);
+
+          await clientBot.sendMessage({
+            chatId: tgId,
+            text: lines.join('\n'),
+            parseMode: 'HTML',
+            replyMarkup: {
+              inline_keyboard: keyboardButtons,
+            },
+          });
+          return;
+        }
+
         // Linked client general welcome/menu
         await clientBot.sendMessage({
           chatId: tgId,
@@ -313,7 +372,7 @@ export class TelegramBotService {
             `👋 Здравствуйте, <b>${client.companyName}</b>!`,
             ``,
             `Ваш Telegram-аккаунт привязан к кабинету AliBros Logistics.`,
-            `Используйте /orders для просмотра активных поставок или откройте Mini App.`,
+            `Используйте /orders для просмотра заявок, /news для новостей или откройте Mini App.`,
           ].join('\n'),
           parseMode: 'HTML',
           replyMarkup: {
@@ -322,6 +381,12 @@ export class TelegramBotService {
                 {
                   text: '📱 Открыть кабинет селлера (Mini App)',
                   web_app: { url: `${appUrl}/miniapp` },
+                },
+              ],
+              [
+                {
+                  text: '📰 Новости и регламенты',
+                  web_app: { url: `${appUrl}/miniapp/news` },
                 },
               ],
             ],

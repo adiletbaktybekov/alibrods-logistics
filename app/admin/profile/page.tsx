@@ -68,6 +68,18 @@ export default async function AdminProfilePage() {
         </p>
       </div>
 
+      {dbUser?.mustChangePassword && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-xs text-amber-900 flex items-start gap-3 shadow-xs">
+          <div className="text-xl">⚠️</div>
+          <div>
+            <span className="font-bold text-sm block">Требуется обязательная смена временного пароля</span>
+            <p className="mt-0.5">
+              Для безопасности вашей учётной записи установите постоянный надёжный пароль в форме внизу страницы.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Account Info Card */}
       <Card className="border-slate-200 shadow-sm bg-white">
         <CardHeader className="pb-3 border-b border-slate-100 flex flex-row items-center justify-between">

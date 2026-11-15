@@ -6,6 +6,8 @@ import { ProfileForm } from './profile-form';
 import { ClientTelegramCard } from './telegram-card';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { NewsNotificationToggle } from '@/components/profile/news-notification-toggle';
+import { prisma } from '@/database/prisma';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,6 +21,13 @@ export default async function ProfilePage() {
   if (!profile || !profile.client) {
     return <div>Профиль не найден</div>;
   }
+
+  const userRecord = process.env.DATABASE_URL
+    ? await prisma.user.findUnique({
+        where: { id: profile.user.id },
+        select: { allowNewsNotifications: true },
+      })
+    : null;
 
   const telegramInfo = telegramRes.data || {
     telegramAccount: null,
@@ -53,6 +62,11 @@ export default async function ProfilePage() {
           </Card>
 
           <ClientTelegramCard initialInfo={telegramInfo} />
+
+          <Card className="border-slate-200 shadow-sm p-4">
+            <h3 className="font-bold text-slate-900 text-sm mb-1">Настройки оповещений</h3>
+            <NewsNotificationToggle initialEnabled={userRecord?.allowNewsNotifications ?? true} />
+          </Card>
         </div>
 
         {/* Right Column: Editable Profile Form */}

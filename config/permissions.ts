@@ -130,3 +130,28 @@ export function hasAnyPermission(role: UserRole, permissions: Permission[]): boo
 export function hasAllPermissions(role: UserRole, permissions: Permission[]): boolean {
   return permissions.every((perm) => hasPermission(role, perm));
 }
+
+/**
+ * Enforces server-side RBAC rule:
+ * - Only SUPER_ADMIN can assign SUPER_ADMIN role.
+ * - Regular ADMIN cannot alter or demote a SUPER_ADMIN.
+ * - Non-admin roles cannot modify any roles.
+ */
+export function canModifyUserRole(
+  actingUserRole: UserRole,
+  targetUserRole: UserRole,
+  newRole: UserRole
+): boolean {
+  if (actingUserRole === 'SUPER_ADMIN') {
+    return true;
+  }
+  if (actingUserRole === 'ADMIN') {
+    // Regular admin CANNOT touch superadmin and CANNOT grant superadmin
+    if (targetUserRole === 'SUPER_ADMIN' || newRole === 'SUPER_ADMIN') {
+      return false;
+    }
+    return true;
+  }
+  return false;
+}
+

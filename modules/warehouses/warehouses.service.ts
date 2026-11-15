@@ -22,6 +22,32 @@ export {
   isWarehouseOpenOnDate,
 };
 
+export function resolveWarehouseSchedule(wh: {
+  code?: string;
+  name?: string;
+  operatingHours?: string | null;
+}): {
+  schedule: WarehouseSchedule;
+  scheduleDescription: string;
+} {
+  const confirmed = CONFIRMED_WAREHOUSES.find((c) => c.code === wh.code || c.name === wh.name);
+  if (confirmed) {
+    return {
+      schedule: confirmed.schedule,
+      scheduleDescription: confirmed.scheduleDescription,
+    };
+  }
+
+  const hours = (wh.operatingHours || '').toLowerCase();
+  if (hours.includes('вторник') || hours.includes('четверг') || hours.includes('суббота') || hours.includes('вт') || hours.includes('чт') || hours.includes('сб')) {
+    return { schedule: 'TTS', scheduleDescription: 'Вторник / четверг / суббота' };
+  }
+  if (hours.includes('понедельник') || hours.includes('среда') || hours.includes('пятница') || hours.includes('пн') || hours.includes('ср') || hours.includes('пт')) {
+    return { schedule: 'MWF', scheduleDescription: 'Понедельник / среда / пятница' };
+  }
+  return { schedule: 'DAILY', scheduleDescription: 'Ежедневно' };
+}
+
 export class WarehousesService {
   private static seedingPromise: Promise<void> | null = null;
 
@@ -100,16 +126,16 @@ export class WarehousesService {
         }
 
         if (records.length > 0) {
-          // Обогащаем данными расписания по коду
+          // Обогащаем данными расписания по коду или часам работы
           return records.map((r) => {
-            const confirmed = CONFIRMED_WAREHOUSES.find((c) => c.code === r.code || c.name === r.name);
+            const scheduleInfo = resolveWarehouseSchedule(r);
             return {
               id: r.id,
               name: r.name,
               code: r.code,
               marketplace: r.marketplace,
-              schedule: confirmed?.schedule || 'DAILY',
-              scheduleDescription: confirmed?.scheduleDescription || 'Ежедневно',
+              schedule: scheduleInfo.schedule,
+              scheduleDescription: scheduleInfo.scheduleDescription,
               address: r.address || undefined,
               city: r.city || undefined,
               isActive: r.isActive,
@@ -150,14 +176,14 @@ export class WarehousesService {
         }
 
         if (wh) {
-          const confirmed = CONFIRMED_WAREHOUSES.find((c) => c.code === wh.code || c.name === wh.name);
+          const scheduleInfo = resolveWarehouseSchedule(wh);
           return {
             id: wh.id,
             name: wh.name,
             code: wh.code,
             marketplace: wh.marketplace,
-            schedule: confirmed?.schedule || 'DAILY',
-            scheduleDescription: confirmed?.scheduleDescription || 'Ежедневно',
+            schedule: scheduleInfo.schedule,
+            scheduleDescription: scheduleInfo.scheduleDescription,
             address: wh.address || undefined,
             city: wh.city || undefined,
             isActive: wh.isActive,
