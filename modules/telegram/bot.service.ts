@@ -277,19 +277,30 @@ export class TelegramBotService {
             );
           }
 
+          const inlineKeyboard: Array<Array<{ text: string; web_app?: { url: string } }>> = [];
+
+          for (const ord of activeOrders) {
+            inlineKeyboard.push([
+              {
+                text: `📦 Открыть #${ord.orderNumber}`,
+                web_app: { url: `${appUrl}/miniapp/orders/${ord.id}` },
+              },
+            ]);
+          }
+
+          inlineKeyboard.push([
+            {
+              text: '📱 Открыть все заявки (Mini App)',
+              web_app: { url: `${appUrl}/miniapp/orders` },
+            },
+          ]);
+
           await clientBot.sendMessage({
             chatId: tgId,
             text: lines.join('\n'),
             parseMode: 'HTML',
             replyMarkup: {
-              inline_keyboard: [
-                [
-                  {
-                    text: '📱 Открыть подробности (Mini App)',
-                    web_app: { url: `${appUrl}/miniapp` },
-                  },
-                ],
-              ],
+              inline_keyboard: inlineKeyboard,
             },
           });
           return;

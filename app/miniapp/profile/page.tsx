@@ -5,6 +5,7 @@ import { MiniAppHeader } from '@/components/miniapp/miniapp-header';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { formatPhoneNumber } from '@/lib/phone';
 import { prisma } from '@/database/prisma';
 
 export const dynamic = 'force-dynamic';
@@ -65,16 +66,9 @@ export default async function MiniAppProfilePage() {
             </div>
 
             <div>
-              <span className="text-[11px] text-slate-400 block">Телефон:</span>
+              <span className="text-[11px] text-slate-400 block">Номер Telegram:</span>
               <span className="font-mono font-medium text-slate-800">
-                {client?.contactPhone || user.phone || '—'}
-              </span>
-            </div>
-
-            <div>
-              <span className="text-[11px] text-slate-400 block">Email:</span>
-              <span className="font-mono text-slate-800">
-                {client?.contactEmail || user.email || '—'}
+                {client?.contactPhone || user.phone ? formatPhoneNumber(client?.contactPhone || user.phone || '') : '—'}
               </span>
             </div>
           </div>

@@ -30,10 +30,20 @@ export async function updateClientProfileAction(prevState: unknown, formData: Fo
   }
 
   try {
-    await prisma.clientProfile.update({
-      where: { userId: user.id },
-      data: parsed.data,
-    });
+    await prisma.$transaction([
+      prisma.clientProfile.update({
+        where: { userId: user.id },
+        data: parsed.data,
+      }),
+      ...(parsed.data.contactPhone
+        ? [
+            prisma.user.update({
+              where: { id: user.id },
+              data: { phone: parsed.data.contactPhone },
+            }),
+          ]
+        : []),
+    ]);
 
     revalidatePath('/profile');
     return { success: true, message: 'Профиль успешно обновлён' };

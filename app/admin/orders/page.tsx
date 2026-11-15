@@ -9,6 +9,7 @@ import { StatusBadge, STATUS_LABELS } from '@/components/ui/status-badge';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { formatDateTime } from '@/lib/utils';
+import { formatPhoneNumber } from '@/lib/phone';
 import { OrderStatus } from '@prisma/client';
 import { buildOrdersPaginationUrl, calculateDisplayRange } from '@/lib/pagination';
 import { isExpectedAuthError } from '@/lib/errors';
@@ -230,7 +231,7 @@ export default async function AdminOrdersPage({ searchParams }: AdminOrdersPageP
                         </div>
                         <div className="text-[11px] text-slate-500">
                           {client?.contactPerson && client?.companyName ? client.contactPerson : ''}
-                          {client?.contactPhone ? ` • ${client.contactPhone}` : ''}
+                          {client?.contactPhone ? ` • ${formatPhoneNumber(client.contactPhone)}` : ''}
                         </div>
                       </TableCell>
                       <TableCell>
@@ -284,7 +285,7 @@ export default async function AdminOrdersPage({ searchParams }: AdminOrdersPageP
                       <TableCell className="text-right">
                         <Link href={`/admin/orders/${order.id}`}>
                           <Button variant="outline" size="sm" className="text-xs">
-                            Управление
+                            Открыть
                           </Button>
                         </Link>
                       </TableCell>

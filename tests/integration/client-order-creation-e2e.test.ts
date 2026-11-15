@@ -10,7 +10,7 @@ import { ForbiddenError } from '@/lib/errors';
 
 describe('CRITICAL: Client Order Creation End-to-End on Neon Staging', () => {
   const timestamp = Date.now();
-  const testPhone = `+996777${String(timestamp).slice(-6)}`;
+  const testPhone = `+7999${String(timestamp).slice(-6)}`;
   const testEmail = `e2e-seller-${timestamp}@alibros-staging.internal`;
 
   let createdUserId: string | null = null;

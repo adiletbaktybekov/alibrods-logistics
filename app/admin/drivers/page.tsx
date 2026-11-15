@@ -9,6 +9,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { DriverModal } from './driver-modal';
 import { DriverCodeButton } from './driver-code-button';
 import { buildDriversPaginationUrl, calculateDisplayRange } from '@/lib/pagination';
+import { formatPhoneNumber } from '@/lib/phone';
 import { PaginatedDriversResult } from '@/modules/drivers/drivers.service';
 import { isExpectedAuthError } from '@/lib/errors';
 
@@ -96,14 +97,14 @@ export default async function AdminDriversPage({ searchParams }: AdminDriversPag
           {/* Text Search */}
           <div className="sm:col-span-2">
             <label htmlFor="search" className="block text-xs font-semibold text-slate-700 mb-1">
-              Поиск (ФИО, телефон, авто)
+              Поиск (ФИО, номер Telegram, авто)
             </label>
             <input
               id="search"
               name="search"
               type="text"
               defaultValue={search}
-              placeholder="Иванов, +7999..., ГАЗель, В123ВВ..."
+              placeholder="Иванов, +7 955 123-45-67, ГАЗель, В123ВВ..."
               className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
             />
           </div>
@@ -165,7 +166,7 @@ export default async function AdminDriversPage({ searchParams }: AdminDriversPag
                 <TableHeader>
                   <TableRow>
                     <TableHead>ФИО водителя</TableHead>
-                    <TableHead>Телефон</TableHead>
+                    <TableHead>Номер Telegram</TableHead>
                     <TableHead>Транспорт</TableHead>
                     <TableHead>Статус</TableHead>
                     <TableHead>Telegram</TableHead>
@@ -184,10 +185,10 @@ export default async function AdminDriversPage({ searchParams }: AdminDriversPag
                         <TableCell className="font-semibold text-slate-900 text-xs">
                           {driver.fullName}
                         </TableCell>
-                        <TableCell className="text-xs font-mono text-slate-700">
+                        <TableCell className="text-xs font-mono text-slate-700 whitespace-nowrap">
                           {driver.user?.phone ? (
                             <a href={`tel:${driver.user.phone}`} className="hover:text-brand-600">
-                              {driver.user.phone}
+                              {formatPhoneNumber(driver.user.phone)}
                             </a>
                           ) : (
                             <span className="text-slate-400">—</span>

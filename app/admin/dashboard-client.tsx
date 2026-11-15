@@ -10,6 +10,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { formatDateTime } from '@/lib/utils';
+import { formatPhoneNumber } from '@/lib/phone';
 import { useRouter } from 'next/navigation';
 
 interface DashboardClientProps {
@@ -545,7 +546,7 @@ export function DashboardClient({ initialStats }: DashboardClientProps) {
                           </div>
                           {client?.contactPhone && (
                             <div className="text-[11px] text-slate-500 font-mono">
-                              {client.contactPhone}
+                              {formatPhoneNumber(client.contactPhone)}
                             </div>
                           )}
                         </TableCell>
@@ -581,7 +582,7 @@ export function DashboardClient({ initialStats }: DashboardClientProps) {
                         <TableCell className="text-right">
                           <Link href={`/admin/orders/${order.id}`}>
                             <Button variant="outline" size="sm" className="text-xs">
-                              Управление
+                              Открыть
                             </Button>
                           </Link>
                         </TableCell>

@@ -71,15 +71,15 @@ export default function MiniAppLinkPage() {
         <form onSubmit={handleLink} className="space-y-4">
           <div>
             <Label htmlFor="login" className="text-xs font-semibold text-slate-700">
-              Телефон или Email *
+              Номер Telegram *
             </Label>
             <Input
               id="login"
-              type="text"
+              type="tel"
               required
               value={login}
               onChange={(e) => setLogin(e.target.value)}
-              placeholder="+7 (999) 000-00-00"
+              placeholder="+7 955 123-45-67"
               className="mt-1 text-xs"
             />
           </div>

@@ -6,7 +6,7 @@ describe('Order Zod Validation Schemas', () => {
     warehouseId: 'b7b64f3e-436f-4d6b-b4a8-6f6a73c1d53e',
     marketplace: 'WILDBERRIES',
     pickupAddress: 'г. Бишкек, ул. Киевская 100',
-    pickupContactPhone: '+996555123456',
+    pickupContactPhone: '+79551234567',
     items: [
       {
         boxNumber: 1,

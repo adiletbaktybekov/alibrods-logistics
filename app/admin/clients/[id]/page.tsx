@@ -8,6 +8,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { formatDateTime } from '@/lib/utils';
+import { formatPhoneNumber } from '@/lib/phone';
 import { isExpectedAuthError } from '@/lib/errors';
 
 export const dynamic = 'force-dynamic';
@@ -109,21 +110,10 @@ export default async function AdminClientDetailPage({ params }: AdminClientDetai
               </div>
 
               <div>
-                <span className="text-slate-500 block">Телефон:</span>
+                <span className="text-slate-500 block">Номер Telegram:</span>
                 {client.contactPhone ? (
                   <a href={`tel:${client.contactPhone}`} className="text-brand-600 font-mono hover:underline">
-                    {client.contactPhone}
-                  </a>
-                ) : (
-                  '—'
-                )}
-              </div>
-
-              <div>
-                <span className="text-slate-500 block">Email:</span>
-                {client.contactEmail ? (
-                  <a href={`mailto:${client.contactEmail}`} className="text-brand-600 font-mono hover:underline">
-                    {client.contactEmail}
+                    {formatPhoneNumber(client.contactPhone)}
                   </a>
                 ) : (
                   '—'
@@ -215,7 +205,7 @@ export default async function AdminClientDetailPage({ params }: AdminClientDetai
                         <TableCell className="text-right">
                           <Link href={`/admin/orders/${order.id}`}>
                             <Button variant="outline" size="sm" className="text-xs">
-                              Управление
+                              Открыть
                             </Button>
                           </Link>
                         </TableCell>

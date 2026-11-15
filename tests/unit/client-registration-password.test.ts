@@ -43,7 +43,7 @@ describe('STEP 7.9.1: Seller Registration Password Validation', () => {
     const validBaseData = {
       companyName: 'ОсОО «Тест Селлер»',
       contactPerson: 'Акылбеков Б.',
-      phone: '+996555123456',
+      phone: '+79551234567',
       email: 'seller@example.com',
     };
 
@@ -82,7 +82,7 @@ describe('STEP 7.9.1: Seller Registration Password Validation', () => {
       const formData = new FormData();
       formData.set('companyName', 'ОсОО «Али Селлер»');
       formData.set('contactPerson', 'Алибек А.');
-      formData.set('phone', '+996555123456');
+      formData.set('phone', '+79551234567');
       formData.set('password', 'password123');
       formData.set('confirmPassword', 'different123');
 
@@ -94,7 +94,7 @@ describe('STEP 7.9.1: Seller Registration Password Validation', () => {
       const formData = new FormData();
       formData.set('companyName', 'ОсОО «Али Селлер»');
       formData.set('contactPerson', 'Алибек А.');
-      formData.set('phone', '+996555123456');
+      formData.set('phone', '+79551234567');
       formData.set('password', 'short');
       formData.set('confirmPassword', 'short');
 

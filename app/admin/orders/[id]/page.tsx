@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { StatusBadge, STATUS_LABELS } from '@/components/ui/status-badge';
 import { Badge } from '@/components/ui/badge';
 import { formatDateTime } from '@/lib/utils';
+import { formatPhoneNumber } from '@/lib/phone';
 import { OrderActions } from './order-actions';
 import { PhotoGallery } from '@/components/orders/photo-gallery';
 import { isExpectedAuthError } from '@/lib/errors';
@@ -122,30 +123,18 @@ export default async function AdminOrderDetailPage({ params }: AdminOrderDetailP
               </div>
 
               <div>
-                <span className="text-slate-500 block">Телефон:</span>
+                <span className="text-slate-500 block">Номер Telegram:</span>
                 {client?.contactPhone ? (
                   <a
                     href={`tel:${client.contactPhone}`}
                     className="font-mono font-medium text-brand-600 hover:underline"
                   >
-                    {client.contactPhone}
+                    {formatPhoneNumber(client.contactPhone)}
                   </a>
                 ) : (
                   <span className="text-slate-400">—</span>
                 )}
               </div>
-
-              {client?.contactEmail && (
-                <div className="sm:col-span-2">
-                  <span className="text-slate-500 block">Email:</span>
-                  <a
-                    href={`mailto:${client.contactEmail}`}
-                    className="font-mono text-brand-600 hover:underline"
-                  >
-                    {client.contactEmail}
-                  </a>
-                </div>
-              )}
             </CardContent>
           </Card>
 
@@ -302,7 +291,7 @@ export default async function AdminOrderDetailPage({ params }: AdminOrderDetailP
                 {(order.pickupContactName || order.pickupContactPhone) && (
                   <div className="mt-1.5 text-[11px] text-slate-600">
                     Контакт на заборе: <span className="font-medium text-slate-800">{order.pickupContactName || '—'}</span>
-                    {order.pickupContactPhone && ` • тел: ${order.pickupContactPhone}`}
+                    {order.pickupContactPhone && ` • тел: ${formatPhoneNumber(order.pickupContactPhone)}`}
                   </div>
                 )}
               </div>

@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { formatDateTime } from '@/lib/utils';
+import { formatPhoneNumber } from '@/lib/phone';
 import { buildClientsPaginationUrl, calculateDisplayRange } from '@/lib/pagination';
 import { PaginatedClientsResult } from '@/modules/clients/clients.service';
 import { isExpectedAuthError } from '@/lib/errors';
@@ -74,14 +75,14 @@ export default async function AdminClientsPage({ searchParams }: AdminClientsPag
         <form method="GET" action="/admin/clients" className="flex flex-col sm:flex-row gap-3">
           <div className="flex-1">
             <label htmlFor="search" className="block text-xs font-semibold text-slate-700 mb-1">
-              Поиск (компания, ИНН, контактное лицо, телефон)
+              Поиск (компания, ИНН, контактное лицо, номер Telegram)
             </label>
             <input
               id="search"
               name="search"
               type="text"
               defaultValue={search}
-              placeholder="ООО Вектор, 7701234567, Иванов, +7999..."
+              placeholder="ООО Вектор, 7701234567, Иванов, +7 955 123-45-67"
               className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
             />
           </div>
@@ -111,8 +112,7 @@ export default async function AdminClientsPage({ searchParams }: AdminClientsPag
                     <TableHead>Компания</TableHead>
                     <TableHead>ИНН</TableHead>
                     <TableHead>Контактное лицо</TableHead>
-                    <TableHead>Телефон</TableHead>
-                    <TableHead>Email</TableHead>
+                    <TableHead>Номер Telegram</TableHead>
                     <TableHead className="text-center">Заявок</TableHead>
                     <TableHead>Регистрация</TableHead>
                     <TableHead className="text-right">Действие</TableHead>
@@ -143,19 +143,10 @@ export default async function AdminClientsPage({ searchParams }: AdminClientsPag
                         <TableCell className="text-xs text-slate-900 font-medium">
                           {client.contactPerson}
                         </TableCell>
-                        <TableCell className="text-xs font-mono text-slate-700">
+                        <TableCell className="text-xs font-mono text-slate-700 whitespace-nowrap">
                           {client.contactPhone ? (
                             <a href={`tel:${client.contactPhone}`} className="hover:text-brand-600">
-                              {client.contactPhone}
-                            </a>
-                          ) : (
-                            <span className="text-slate-400">—</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-xs text-slate-700">
-                          {client.contactEmail ? (
-                            <a href={`mailto:${client.contactEmail}`} className="hover:text-brand-600 font-mono text-[11px]">
-                              {client.contactEmail}
+                              {formatPhoneNumber(client.contactPhone)}
                             </a>
                           ) : (
                             <span className="text-slate-400">—</span>

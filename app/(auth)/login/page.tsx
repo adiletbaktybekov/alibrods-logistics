@@ -8,6 +8,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 
+import { PhoneInput } from '@/components/ui/phone-input';
+
 export default function LoginPage() {
   const [state, formAction, isPending] = useActionState(loginAction, null);
 
@@ -16,7 +18,7 @@ export default function LoginPage() {
       <div className="mb-6">
         <h2 className="text-xl font-bold text-slate-900 tracking-tight">Вход в личный кабинет</h2>
         <p className="text-sm text-slate-500 mt-1">
-          Введите ваш email или номер телефона для доступа к заявкам
+          Введите ваш номер Telegram для доступа к заявкам
         </p>
       </div>
 
@@ -28,15 +30,11 @@ export default function LoginPage() {
 
       <form action={formAction} className="space-y-4">
         <div>
-          <Label htmlFor="login" required>
-            Email или телефон
-          </Label>
-          <Input
+          <PhoneInput
             id="login"
             name="login"
-            type="text"
-            placeholder="seller@example.com или +996555123456"
-            autoComplete="username"
+            label="Номер Telegram"
+            placeholder="+7 955 123-45-67"
             required
           />
         </div>

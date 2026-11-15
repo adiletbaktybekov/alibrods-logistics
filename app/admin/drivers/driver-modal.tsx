@@ -6,6 +6,7 @@ import { createDriverAction } from '@/app/actions/admin';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { PhoneInput } from '@/components/ui/phone-input';
 
 interface ActionState {
   success?: boolean;
@@ -86,16 +87,12 @@ export function DriverModal() {
               </div>
 
               <div>
-                <Label htmlFor="phone" className="text-xs font-semibold text-slate-700">
-                  Номер телефона *
-                </Label>
-                <Input
+                <PhoneInput
                   id="phone"
                   name="phone"
-                  type="tel"
+                  label="Номер Telegram *"
                   required
-                  placeholder="+7 (999) 123-45-67"
-                  className="mt-1 text-xs font-mono"
+                  placeholder="+7 955 123-45-67"
                 />
               </div>
 

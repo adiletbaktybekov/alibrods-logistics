@@ -4,6 +4,7 @@ import * as React from 'react';
 import { useActionState } from 'react';
 import { updateClientProfileAction } from '@/app/actions/profile';
 import { Input } from '@/components/ui/input';
+import { PhoneInput } from '@/components/ui/phone-input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
@@ -84,28 +85,15 @@ export function ProfileForm({ client, warehouses }: ProfileFormProps) {
             </div>
 
             <div>
-              <Label htmlFor="contactPhone" required>
-                Телефон для связи
-              </Label>
-              <Input
+              <PhoneInput
                 id="contactPhone"
                 name="contactPhone"
+                label="Номер Telegram"
                 defaultValue={client.contactPhone}
+                placeholder="+7 955 123-45-67"
                 required
               />
             </div>
-          </div>
-
-          <div>
-            <Label htmlFor="contactEmail">
-              Email для отчётов и уведомлений
-            </Label>
-            <Input
-              id="contactEmail"
-              name="contactEmail"
-              type="email"
-              defaultValue={client.contactEmail || ''}
-            />
           </div>
 
           <div>

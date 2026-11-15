@@ -133,7 +133,7 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
                   <TableCell className="text-right">
                     <Link href={`/orders/${order.id}`}>
                       <Button variant="outline" size="sm" className="text-xs">
-                        Детали
+                        Открыть
                       </Button>
                     </Link>
                   </TableCell>

@@ -11,9 +11,11 @@ export const createDriverProfileSchema = z.object({
   notes: z.string().optional(),
 });
 
+import { phoneSchema } from '@/lib/phone';
+
 export const registerDriverSchema = z.object({
   fullName: z.string().min(3, 'ФИО должно содержать минимум 3 символа'),
-  phone: z.string().regex(/^\+?[1-9]\d{7,14}$/, 'Некорректный номер телефона'),
+  phone: phoneSchema,
   vehicleModel: z.string().max(100).optional(),
   vehiclePlateNumber: z.string().max(20).optional(),
   notes: z.string().max(500).optional(),

@@ -7,6 +7,7 @@ import { registerAction } from '@/app/actions/auth';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
+import { PhoneInput } from '@/components/ui/phone-input';
 
 export default function RegisterPage() {
   const [state, formAction, isPending] = useActionState(registerAction, null);
@@ -53,14 +54,11 @@ export default function RegisterPage() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <Label htmlFor="phone" required>
-              Телефон
-            </Label>
-            <Input
+            <PhoneInput
               id="phone"
               name="phone"
-              type="tel"
-              placeholder="+996555123456"
+              label="Номер Telegram"
+              placeholder="+7 955 123-45-67"
               required
             />
           </div>
@@ -75,18 +73,6 @@ export default function RegisterPage() {
               placeholder="10-14 цифр"
             />
           </div>
-        </div>
-
-        <div>
-          <Label htmlFor="email">
-            Email (для уведомлений)
-          </Label>
-          <Input
-            id="email"
-            name="email"
-            type="email"
-            placeholder="seller@example.com"
-          />
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

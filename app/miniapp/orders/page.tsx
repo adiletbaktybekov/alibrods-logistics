@@ -105,7 +105,12 @@ export default async function MiniAppOrdersPage({ searchParams }: MiniAppOrdersP
                     <span className="font-mono text-xs font-bold text-slate-900">
                       {order.orderNumber}
                     </span>
-                    <StatusBadge status={order.status} className="text-[10px] px-2 py-0.5" />
+                    <div className="flex items-center gap-2">
+                      <StatusBadge status={order.status} className="text-[10px] px-2 py-0.5" />
+                      <span className="inline-flex items-center justify-center rounded-lg bg-brand-50 border border-brand-200 px-2.5 py-1 text-xs font-semibold text-brand-700 hover:bg-brand-100 transition-colors">
+                        Открыть
+                      </span>
+                    </div>
                   </div>
 
                   <div className="flex items-center justify-between text-xs text-slate-700 pt-1 border-t border-slate-100">
