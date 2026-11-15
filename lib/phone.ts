@@ -4,8 +4,8 @@ import {
   AsYouType,
   getCountryCallingCode,
   getCountries,
-  CountryCode,
-  PhoneNumber,
+  type CountryCode,
+  type PhoneNumber,
 } from 'libphonenumber-js';
 
 export type { CountryCode };
