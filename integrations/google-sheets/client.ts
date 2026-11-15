@@ -250,6 +250,32 @@ export class GoogleSheetsClient {
   }
 
   /**
+   * Clears all order data rows (A2:N), preserving the header row 1.
+   */
+  public async clearDataRows(): Promise<boolean> {
+    if (!this.isConfigured()) return false;
+    const token = await this.getAccessToken();
+    if (!token) return false;
+
+    const clearRange = encodeURIComponent(`${this.sheetName}!A2:N`);
+    const clearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${this.spreadsheetId}/values/${clearRange}:clear`;
+
+    try {
+      const res = await this.fetchGoogleApi(clearUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      return res.ok;
+    } catch (err) {
+      logger.error({ err }, 'Error clearing data rows from Google Sheets');
+      return false;
+    }
+  }
+
+  /**
    * Exports confirmed orders to Google Sheets:
    * - Appends new rows if order not yet present
    * - Updates existing rows (leaving column 12 delivery cost intact if entered by accountant)

@@ -154,9 +154,8 @@ describe('Telegram 3-Bot Architecture & Shared Group Notification Service', () =
       totalPalletsCount: 2,
     };
 
-    const allEvents: TelegramGroupEventType[] = [
+    const standardEvents: TelegramGroupEventType[] = [
       'ORDER_CREATED',
-      'ORDER_CONFIRMED',
       'ORDER_REJECTED',
       'DRIVER_ASSIGNED',
       'DRIVER_ACCEPTED',
@@ -167,7 +166,7 @@ describe('Telegram 3-Bot Architecture & Shared Group Notification Service', () =
       'COST_CALCULATED',
     ];
 
-    it.each(allEvents)('should format valid HTML for event %s with required fields', (eventType) => {
+    it.each(standardEvents)('should format valid HTML for standard event %s without marketplace', (eventType) => {
       const payload: TelegramOrderNotificationPayload = {
         ...basePayload,
         driverName: 'Иванов Иван',
@@ -182,7 +181,8 @@ describe('Telegram 3-Bot Architecture & Shared Group Notification Service', () =
       // Must include header and orderNumber
       expect(msg).toContain('<b>AliBros Logistics</b>');
       expect(msg).toContain(payload.orderNumber);
-      expect(msg).toContain(payload.marketplace);
+      // Clean Start Requirement 1: no marketplace names in Telegram
+      expect(msg).not.toContain(payload.marketplace);
       expect(msg).toContain(payload.warehouseName);
       expect(msg).toContain('15 кор., 2 палл.');
       expect(msg).toContain('Статус:');
@@ -193,6 +193,43 @@ describe('Telegram 3-Bot Architecture & Shared Group Notification Service', () =
       expect(msg).not.toContain('+79');
       expect(msg).not.toContain('18500');
       expect(msg).not.toContain('RUB');
+    });
+
+    it('should format ORDER_CONFIRMED with dedicated shipping card layout and client comment', () => {
+      const payload: TelegramOrderNotificationPayload = {
+        ...basePayload,
+        clientCompanyName: 'ООО Ромашка',
+        clientContactPerson: 'Анна',
+        clientPhone: '+7 (999) 000-11-22',
+        clientComment: 'Позвонить водителю за час.\nВорота №4 & пандус.',
+        destinationsSummary: 'Коледино — 15 кор., 2 палл.',
+      };
+
+      const msg = TelegramNotificationService.buildGroupMessage('ORDER_CONFIRMED', payload);
+
+      expect(msg).toContain(`📦 <b>Заявка №${payload.orderNumber}</b>`);
+      expect(msg).toContain('Компания: <b>ООО Ромашка</b>');
+      expect(msg).toContain('Контактное лицо: <b>Анна</b>');
+      expect(msg).toContain('Телефон: <code>+7 (999) 000-11-22</code>');
+      expect(msg).toContain('Склады:\nКоледино — 15 кор., 2 палл.');
+      expect(msg).toContain('<b>Комментарий клиента:</b>\n<i>Позвонить водителю за час.\nВорота №4 &amp; пандус.</i>');
+      expect(msg).not.toContain(payload.marketplace);
+    });
+
+    it('should omit client comment block in ORDER_CONFIRMED if comment is empty or absent', () => {
+      const payload: TelegramOrderNotificationPayload = {
+        ...basePayload,
+        clientCompanyName: 'ИП Иванов',
+        clientContactPerson: 'Иван',
+        clientComment: '   ',
+      };
+
+      const msg = TelegramNotificationService.buildGroupMessage('ORDER_CONFIRMED', payload);
+
+      expect(msg).toContain(`📦 <b>Заявка №${payload.orderNumber}</b>`);
+      expect(msg).toContain('Компания: <b>ИП Иванов</b>');
+      expect(msg).not.toContain('Комментарий клиента:');
+      expect(msg).not.toContain(payload.marketplace);
     });
 
     it('should include rejection reason in ORDER_REJECTED message', () => {
@@ -209,11 +246,13 @@ describe('Telegram 3-Bot Architecture & Shared Group Notification Service', () =
       const acceptedMsg = TelegramNotificationService.buildGroupMessage('ACCEPTED_BY_MARKETPLACE', basePayload);
       const completedMsg = TelegramNotificationService.buildGroupMessage('ORDER_COMPLETED', basePayload);
 
-      expect(acceptedMsg).toContain('📋 Партия успешно принята маркетплейсом: <code>#ABL-2026-001</code>');
-      expect(acceptedMsg).toContain('Партия успешно принята маркетплейсом на воротах склада.');
+      expect(acceptedMsg).toContain('📦 Партия успешно принята на складе: <code>#ABL-2026-001</code>');
+      expect(acceptedMsg).toContain('Партия успешно принята на воротах склада.');
+      expect(acceptedMsg).not.toContain('Wildberries');
 
       expect(completedMsg).toContain('🎉 Заявка полностью завершена: <code>#ABL-2026-001</code>');
       expect(completedMsg).toContain('Заявка закрыта. Услуга логистики успешно оказана в полном объёме.');
+      expect(completedMsg).not.toContain('Wildberries');
 
       // Templates must be distinct and unmistakable
       expect(acceptedMsg).not.toEqual(completedMsg);

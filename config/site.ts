@@ -11,7 +11,7 @@ export const siteConfig = {
   shortName: 'AliBros',
   description: 'Коммерческая логистическая платформа для доставки товаров на склады Wildberries и Ozon',
   url: getCanonicalAppUrl(),
-  orderPrefix: 'ABL',
+  orderPrefix: '',
   support: {
     email: 'support@alibros.kg',
     telegram: '@alibros_support',

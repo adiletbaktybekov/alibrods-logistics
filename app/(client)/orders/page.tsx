@@ -56,7 +56,7 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
               type="text"
               name="search"
               defaultValue={search || ''}
-              placeholder="Поиск по номеру заявки (например: ABL-2026-X)"
+              placeholder="Поиск по номеру заявки..."
               className="flex h-10 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
             />
           </div>

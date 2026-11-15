@@ -273,7 +273,7 @@ export class TelegramBotService {
               ? ord.destinations.map((d) => d.isCustomWarehouse ? (d.customWarehouseName || 'Инд. склад') : (d.warehouse?.name || 'Склад')).join(', ')
               : (ord.warehouse?.name || '—');
             lines.push(
-              `• <code>${ord.orderNumber}</code> → <b>${whName}</b> (${ord.marketplace})\n  Статус: <b>${statusLabel}</b> (${cargo})\n`
+              `• <code>#${ord.orderNumber}</code> → <b>${whName}</b>\n  Статус: <b>${statusLabel}</b> (${cargo})\n`
             );
           }
 
@@ -672,7 +672,7 @@ export class TelegramBotService {
 
       const statusBadge =
         action === 'accept'
-          ? `✅ <b>Заявка подтверждена</b> менеджером <b>${managerName}</b>\n📤 Отправлена в оперативную группу отгрузки.`
+          ? `📦 <b>Заявка подтверждена</b> менеджером <b>${managerName}</b>\n📤 Отправлена в оперативную группу отгрузки.`
           : `❌ <b>Заявка отклонена</b> менеджером <b>${managerName}</b>.`;
 
       await managerBot.editMessageText({
@@ -686,7 +686,7 @@ export class TelegramBotService {
     // 6. Action-Specific Dispatches
     if (action === 'accept') {
       // 6a. Answer callback query
-      await managerBot.answerCallbackQuery(cb.id, '✅ Заявка подтверждена и опубликована в группе!');
+      await managerBot.answerCallbackQuery(cb.id, '📦 Заявка подтверждена и опубликована в группе!');
 
       // 6b. Sync confirmed order to Google Sheets (Safe non-blocking)
       try {
@@ -700,11 +700,14 @@ export class TelegramBotService {
         const groupRes = await TelegramNotificationService.notifyGroupEvent('ORDER_CONFIRMED', {
           orderId: processedOrder.id,
           orderNumber: processedOrder.orderNumber,
-          marketplace: processedOrder.marketplace,
           warehouseName: processedOrder.warehouse?.name || 'Склад',
           scheduledPickupAt: processedOrder.scheduledPickupAt,
           totalBoxesCount: processedOrder.totalBoxesCount,
           totalPalletsCount: processedOrder.totalPalletsCount,
+          clientCompanyName: processedOrder.client?.companyName,
+          clientContactPerson: processedOrder.client?.contactPerson,
+          clientPhone: processedOrder.client?.contactPhone,
+          clientComment: processedOrder.clientComment,
           managerComment: `Подтверждено: ${managerName}`,
         });
 
@@ -737,7 +740,7 @@ export class TelegramBotService {
             type: NotificationType.ORDER_STATUS_CHANGED,
             channel: NotificationChannel.IN_APP,
             title: `Заявка #${processedOrder.orderNumber} подтверждена`,
-            body: `Менеджер ${managerName} подтвердил вашу заявку на доставку в ${processedOrder.warehouse.name}.`,
+            body: `Менеджер ${managerName} подтвердил вашу заявку на доставку в ${processedOrder.warehouse?.name || 'Склад'}.`,
             payload: { orderId: processedOrder.id, status: OrderStatus.CONFIRMED },
           });
         } catch {
@@ -751,10 +754,10 @@ export class TelegramBotService {
           await clientBot.sendMessageWithRetry({
             chatId: clientTg.telegramId.toString(),
             text: [
-              `✅ <b>Ваша заявка подтверждена</b>`,
+              `📦 <b>Ваша заявка подтверждена</b>`,
               ``,
               `Заявка: <code>#${processedOrder.orderNumber}</code>`,
-              `Склад: <b>${processedOrder.warehouse.name}</b> (${processedOrder.marketplace})`,
+              `Склад: <b>${processedOrder.warehouse?.name || 'Склад'}</b>`,
               `Статус: <b>Подтверждена</b>. Поиск водителя для забора груза.`,
             ].join('\n'),
             parseMode: 'HTML',
@@ -790,9 +793,9 @@ export class TelegramBotService {
               `❌ <b>Ваша заявка отклонена</b>`,
               ``,
               `Заявка: <code>#${processedOrder.orderNumber}</code>`,
-              `Склад: <b>${processedOrder.warehouse.name}</b> (${processedOrder.marketplace})`,
+              `Склад: <b>${processedOrder.warehouse?.name || 'Склад'}</b>`,
               `Статус: <b>Отклонена менеджером</b>.`,
-              `Причина: <i>Параметры поставки не соответствуют регламенту или склад маркетплейса временно недоступен.</i>`,
+              `Причина: <i>Параметры поставки не соответствуют регламенту или склад временно недоступен.</i>`,
               ``,
               `<i>Вы можете скорректировать заявку в личном кабинете или обратиться к менеджеру поддержки.</i>`,
             ].join('\n'),
@@ -1007,7 +1010,7 @@ export class TelegramBotService {
         });
         warehouseDisplay = `🏢 <b>Склады назначения:</b>\n${destLines.join('\n')}`;
       } else {
-        warehouseDisplay = `🏢 <b>Склад:</b> ${order.warehouse?.name || 'Склад'} (${order.marketplace})`;
+        warehouseDisplay = `🏢 <b>Склад:</b> ${order.warehouse?.name || 'Склад'}`;
       }
 
       const lines = [
@@ -1083,7 +1086,7 @@ export class TelegramBotService {
           : o.warehouse?.name || 'Склад';
 
       lines.push(
-        `✓ <code>#${o.orderNumber}</code> • ${whTitle} (${o.client.companyName}) • ${dateStr}`
+        `📦 <code>#${o.orderNumber}</code> • ${whTitle} (${o.client.companyName}) • ${dateStr}`
       );
     }
 
@@ -1122,7 +1125,7 @@ export class TelegramBotService {
           chatId: tgId,
           text: res.isIdempotent
             ? `ℹ️ Заявка уже была принята ранее.`
-            : `✅ Вы успешно приняли заявку в работу! Направляйтесь на склад для забора груза.`,
+            : `📦 <b>Вы успешно приняли заявку в работу!</b> Направляйтесь на склад для забора груза.`,
           parseMode: 'HTML',
         });
         await this.sendActiveOrdersList(driverProfileId, tgId);
@@ -1240,7 +1243,7 @@ export class TelegramBotService {
       await client.sendMessage({
         chatId: tgId,
         text: res.isConfigured
-          ? `✅ <b>Фотоотчёт успешно принят и сохранён в облако S3!</b>`
+          ? `📦 <b>Фотоотчёт успешно принят и сохранён в облако S3!</b>`
           : `ℹ️ <b>Фото проверено:</b> ${res.message}`,
         parseMode: 'HTML',
         replyMarkup: this.getMainKeyboard(),

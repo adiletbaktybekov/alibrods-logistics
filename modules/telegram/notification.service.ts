@@ -39,12 +39,16 @@ export type TelegramGroupEventType =
 export interface TelegramOrderNotificationPayload {
   orderId: string;
   orderNumber: string;
-  marketplace: string;
+  marketplace?: string;
   warehouseName: string;
   destinationsSummary?: string;
   scheduledPickupAt?: Date | string | null;
   totalBoxesCount: number;
   totalPalletsCount: number;
+  clientCompanyName?: string | null;
+  clientContactPerson?: string | null;
+  clientPhone?: string | null;
+  clientComment?: string | null;
   status?: OrderStatus | string;
   driverName?: string;
   rejectionReason?: string;
@@ -85,6 +89,14 @@ function isDuplicate(key: string): boolean {
 
   deduplicationCache.set(key, now);
   return false;
+}
+
+function escapeHtml(str?: string | null): string {
+  if (!str) return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
 export class TelegramNotificationService {
@@ -132,6 +144,36 @@ export class TelegramNotificationService {
     const cargo = this.formatCargo(payload.totalBoxesCount, payload.totalPalletsCount);
     const dateStr = this.formatDeliveryDate(payload.scheduledPickupAt);
 
+    // Requirement 4: Tailored confirmed order card for shipping group
+    if (eventType === 'ORDER_CONFIRMED') {
+      const lines: string[] = [
+        `📦 <b>Заявка №${payload.orderNumber}</b>`,
+        `Компания: <b>${escapeHtml(payload.clientCompanyName || '—')}</b>`,
+        `Контактное лицо: <b>${escapeHtml(payload.clientContactPerson || '—')}</b>`,
+        payload.clientPhone ? `Телефон: <code>${escapeHtml(payload.clientPhone)}</code>` : '',
+      ].filter(Boolean);
+
+      if (payload.destinationsSummary) {
+        lines.push(`Склады:\n${payload.destinationsSummary}`);
+      } else {
+        lines.push(`Склады:\n${payload.warehouseName || 'Склад'} — ${cargo}`);
+      }
+
+      if (payload.managerComment) {
+        lines.push(`Комментарий менеджера: <i>${escapeHtml(payload.managerComment)}</i>`);
+      }
+
+      if (payload.clientComment && payload.clientComment.trim()) {
+        lines.push(
+          '',
+          `<b>Комментарий клиента:</b>`,
+          `<i>${escapeHtml(payload.clientComment.trim())}</i>`
+        );
+      }
+
+      return lines.join('\n');
+    }
+
     let eventTitle = '';
     let statusText = '';
     let extraLine = '';
@@ -140,14 +182,6 @@ export class TelegramNotificationService {
       case 'ORDER_CREATED':
         eventTitle = `📦 Новая заявка: <code>#${payload.orderNumber}</code>`;
         statusText = 'Ожидает подтверждения менеджером.';
-        break;
-
-      case 'ORDER_CONFIRMED':
-        eventTitle = `✅ Заявка подтверждена: <code>#${payload.orderNumber}</code>`;
-        statusText = 'Подтверждена менеджером. Поиск и назначение водителя.';
-        if (payload.managerComment) {
-          extraLine = `Комментарий: <i>${payload.managerComment}</i>`;
-        }
         break;
 
       case 'ORDER_REJECTED':
@@ -166,7 +200,7 @@ export class TelegramNotificationService {
         break;
 
       case 'DRIVER_ACCEPTED':
-        eventTitle = `👌 Водитель принял рейс: <code>#${payload.orderNumber}</code>`;
+        eventTitle = `📦 Водитель принял рейс: <code>#${payload.orderNumber}</code>`;
         statusText = payload.driverName
           ? `Водитель <b>${payload.driverName}</b> принял заявку. Выезд на забор груза.`
           : 'Водитель принял заявку. Выезд на забор груза.';
@@ -187,12 +221,12 @@ export class TelegramNotificationService {
 
       case 'DELIVERED_TO_WAREHOUSE':
         eventTitle = `🏢 Груз прибыл на склад: <code>#${payload.orderNumber}</code>`;
-        statusText = `Прибыл на склад маркетплейса (${payload.warehouseName}). Ожидание разгрузки.`;
+        statusText = `Прибыл на склад (${payload.warehouseName}). Ожидание разгрузки.`;
         break;
 
       case 'ACCEPTED_BY_MARKETPLACE':
-        eventTitle = `📋 Партия успешно принята маркетплейсом: <code>#${payload.orderNumber}</code>`;
-        statusText = 'Партия успешно принята маркетплейсом на воротах склада.';
+        eventTitle = `📦 Партия успешно принята на складе: <code>#${payload.orderNumber}</code>`;
+        statusText = 'Партия успешно принята на воротах склада.';
         break;
 
       case 'ORDER_COMPLETED':
@@ -224,7 +258,6 @@ export class TelegramNotificationService {
     const lines: string[] = [
       `<b>AliBros Logistics</b>`,
       `<b>${eventTitle}</b>`,
-      `Маркетплейс: <b>${payload.marketplace}</b>`,
       payload.destinationsSummary
         ? `Склады назначения:\n${payload.destinationsSummary}`
         : `Склад назначения: <b>${payload.warehouseName}</b>`,
@@ -306,7 +339,6 @@ export class TelegramNotificationService {
         ``,
         `Номер заявки: <code>#${payload.orderNumber}</code>`,
         `Клиент: <b>${clientInfo}</b>`,
-        `Маркетплейс: <b>${payload.marketplace}</b>`,
         `Склад назначения: <b>${payload.warehouseName}</b>`,
         `Дата доставки: <b>${dateDisplay}</b>`,
         `Количество коробок: <b>${payload.totalBoxesCount} шт.</b>`,

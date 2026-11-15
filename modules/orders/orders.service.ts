@@ -164,7 +164,7 @@ export class OrdersService {
             if (typeof (tx as any).$queryRaw === 'function') {
               const nextSeq = await (tx as any).$queryRaw<{ nextval: bigint }[]>`SELECT nextval('order_number_seq')`;
               const seqNum = nextSeq[0]?.nextval ?? 1n;
-              orderNumber = `${siteConfig.orderPrefix}-${seqNum}`;
+              orderNumber = `${seqNum}`;
             } else {
               orderNumber = generateOrderNumber();
             }
@@ -321,7 +321,7 @@ export class OrdersService {
     try {
       const seqResult = await prisma.$queryRaw<{ nextval: bigint }[]>`SELECT nextval('order_number_seq')`;
       const seqNum = seqResult[0]?.nextval ?? 1n;
-      orderNumber = `${siteConfig.orderPrefix}-${seqNum}`;
+      orderNumber = `${seqNum}`;
     } catch {
       orderNumber = generateOrderNumber();
     }

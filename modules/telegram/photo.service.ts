@@ -392,9 +392,9 @@ export class DriverPhotoService {
         const photoCaption = [
           `📸 <b>Новый фотоотчёт по вашей доставке</b>`,
           ``,
-          `Заявка: <code>${order.orderNumber}</code>`,
+          `Заявка: <code>#${order.orderNumber}</code>`,
           `Этап: <b>${photoLabel}</b>`,
-          `Склад: <b>${order.warehouse?.name || ''}</b> (${order.marketplace})`,
+          `Склад: <b>${order.warehouse?.name || 'Склад'}</b>`,
           driver?.fullName ? `Водитель: <b>${driver.fullName}</b>` : '',
         ].filter(Boolean).join('\n');
 

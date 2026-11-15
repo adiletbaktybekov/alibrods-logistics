@@ -349,7 +349,11 @@ describe('AliBros Logistics: Complete Telegram 3-Bot Integration Unit Tests', ()
 
       for (const evt of events) {
         const msg = TelegramNotificationService.buildGroupMessage(evt, samplePayload);
-        expect(msg).toContain('AliBros Logistics');
+        if (evt === 'ORDER_CONFIRMED') {
+          expect(msg).toContain(`📦 <b>Заявка №${samplePayload.orderNumber}</b>`);
+        } else {
+          expect(msg).toContain('AliBros Logistics');
+        }
         expect(msg).toContain(samplePayload.orderNumber);
         expect(msg).toContain('Коледино');
       }

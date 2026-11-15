@@ -86,7 +86,6 @@ export class NotificationDispatcherService {
           `📦 <b>Ваша заявка принята и отправлена на согласование!</b>`,
           ``,
           `Номер заявки: <code>#${order.orderNumber}</code>`,
-          `Маркетплейс: <b>${order.marketplace}</b>`,
           `Склад назначения: <b>${getOrderWarehouseName(order)}</b>`,
           `Планируемая дата: <b>${pickupDateStr}</b>`,
           `Объём поставки: <b>${cargoStr}</b>`,
@@ -165,6 +164,7 @@ export class NotificationDispatcherService {
             include: { warehouse: true },
             orderBy: { createdAt: 'asc' },
           },
+          client: true,
         },
       });
 
@@ -180,9 +180,9 @@ export class NotificationDispatcherService {
                 const dDate = d.deliveryDate ? new Date(d.deliveryDate).toLocaleDateString('ru-RU') : '';
                 const cargo =
                   d.palletsCount > 0
-                    ? `${d.boxesCount} кор., ${d.palletsCount} палл.`
-                    : `${d.boxesCount} кор.`;
-                return `• ${whName}: ${cargo}${dDate ? ` (${dDate})` : ''}`;
+                    ? `${d.boxesCount} коробок, ${d.palletsCount} паллеты`
+                    : `${d.boxesCount} коробок`;
+                return `${whName} — ${cargo}${dDate ? ` (${dDate})` : ''}`;
               })
               .join('\n')
           : undefined;
@@ -190,12 +190,15 @@ export class NotificationDispatcherService {
       await TelegramNotificationService.notifyGroupEvent('ORDER_CONFIRMED', {
         orderId: order.id,
         orderNumber: order.orderNumber,
-        marketplace: order.marketplace,
         warehouseName: order.warehouse?.name || 'Склад',
         destinationsSummary,
         scheduledPickupAt: order.scheduledPickupAt,
         totalBoxesCount: order.totalBoxesCount,
         totalPalletsCount: order.totalPalletsCount,
+        clientCompanyName: order.client?.companyName,
+        clientContactPerson: order.client?.contactPerson,
+        clientPhone: order.client?.contactPhone,
+        clientComment: order.clientComment,
         managerComment: comment,
       });
 
@@ -318,7 +321,7 @@ export class NotificationDispatcherService {
           `🚛 <b>На вашу заявку назначен водитель!</b>`,
           ``,
           `Заявка: <code>#${order.orderNumber}</code>`,
-          `Склад: <b>${getOrderWarehouseName(order)}</b> (${order.marketplace})`,
+          `Склад: <b>${getOrderWarehouseName(order)}</b>`,
           ``,
           driverDetails,
           ``,
@@ -366,7 +369,7 @@ export class NotificationDispatcherService {
         `🚛 <b>Вам назначен новый рейс!</b>`,
         ``,
         `📦 <b>Заявка:</b> <code>${order.orderNumber}</code>`,
-        `🏢 <b>Склад:</b> ${getOrderWarehouseName(order)} (${order.marketplace})`,
+        `🏢 <b>Склад:</b> ${getOrderWarehouseName(order)}`,
         `📅 <b>Дата:</b> ${pickupDateStr}`,
         `📦 <b>Груз:</b> ${cargoStr}`,
         `📍 <b>Адрес забора:</b> ${order.pickupCity ? `${order.pickupCity}, ` : ''}${order.pickupAddress}`,
@@ -581,9 +584,9 @@ export class NotificationDispatcherService {
           const statusDescriptions: Partial<Record<OrderStatus, string>> = {
             [OrderStatus.ACCEPTED_BY_DRIVER]: 'Водитель принял рейс в работу и выехал на забор груза.',
             [OrderStatus.PICKED_UP]: 'Груз забран у селлера. Подготовка к транспортировке на склад.',
-            [OrderStatus.IN_TRANSIT]: `Машина с грузом в пути на склад маркетплейса (${getOrderWarehouseName(order)}).`,
-            [OrderStatus.DELIVERED_TO_WAREHOUSE]: `Груз доставлен на склад маркетплейса (${getOrderWarehouseName(order)}). Ожидание разгрузки.`,
-            [OrderStatus.ACCEPTED_BY_MARKETPLACE]: 'Партия успешно сдана и принята маркетплейсом на воротах склада!',
+            [OrderStatus.IN_TRANSIT]: `Машина с грузом в пути на склад назначения (${getOrderWarehouseName(order)}).`,
+            [OrderStatus.DELIVERED_TO_WAREHOUSE]: `Груз доставлен на склад назначения (${getOrderWarehouseName(order)}). Ожидание разгрузки.`,
+            [OrderStatus.ACCEPTED_BY_MARKETPLACE]: 'Партия успешно сдана и принята на воротах склада!',
             [OrderStatus.COMPLETED]: 'Услуга доставки оказана в полном объёме. Заявка закрыта.',
             [OrderStatus.REJECTED_BY_MANAGER]: comment ? `Заявка отклонена: ${comment}` : 'Заявка отклонена менеджером.',
           };
@@ -594,7 +597,7 @@ export class NotificationDispatcherService {
             `📦 <b>Статус доставки обновлён</b>`,
             ``,
             `Заявка: <code>#${order.orderNumber}</code>`,
-            `Склад назначения: <b>${getOrderWarehouseName(order)}</b> (${order.marketplace})`,
+            `Склад назначения: <b>${getOrderWarehouseName(order)}</b>`,
             `Новый статус: <b>${newStatusLabel}</b>`,
             extraStatusNote ? `\n<i>${extraStatusNote}</i>` : '',
           ]

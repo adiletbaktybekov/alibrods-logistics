@@ -92,9 +92,9 @@ describe('Local Telegram Notification & Driver Dispatch Verification', () => {
       expect(sentOptions.chatId).toBe('-1003893397086');
       // Topic ID must be 8
       expect(sentOptions.messageThreadId).toBe('8');
-      expect(sentOptions.text).toContain('Заявка подтверждена: <code>#AB-2026-CONFIRM-1</code>');
+      expect(sentOptions.text).toContain('Заявка №AB-2026-CONFIRM-1');
       expect(sentOptions.text).toContain('Коледино');
-      expect(sentOptions.text).toContain('Wildberries');
+      expect(sentOptions.text).not.toContain('Wildberries');
     });
 
     it('falls back to test group -1004425588766 only when TELEGRAM_MANAGER_GROUP_CHAT_ID is unset in staging', async () => {
@@ -303,7 +303,7 @@ describe('Local Telegram Notification & Driver Dispatch Verification', () => {
       // Card content checks
       expect(capturedBody.text).toContain('AB-2026-DRV-4');
       expect(capturedBody.text).toContain('Электросталь');
-      expect(capturedBody.text).toContain('Wildberries');
+      expect(capturedBody.text).not.toContain('Wildberries');
       expect(capturedBody.text).toContain('3 палл. (30 кор.)');
       expect(capturedBody.text).toContain('Олег Отгрузчик');
       expect(capturedBody.text).toContain('+79998887766');

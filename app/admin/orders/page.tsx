@@ -120,7 +120,7 @@ export default async function AdminOrdersPage({ searchParams }: AdminOrdersPageP
               name="search"
               type="text"
               defaultValue={search}
-              placeholder="ABL-2026, ООО Ромашка..."
+              placeholder="Номер заявки, клиент, телефон..."
               className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
             />
           </div>

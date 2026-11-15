@@ -1,19 +1,18 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { siteConfig } from '@/config/site';
 
 export function cn(...inputs: ClassValue[]): string {
   return twMerge(clsx(inputs));
 }
 
 /**
- * Generates an enterprise-grade order tracking number:
- * Format: ABL-YYYY-XXXXXX (e.g., ABL-2026-A8F9B2)
+ * Generates an enterprise-grade order tracking number.
+ * Primary numbering is sequential (1, 2, 3...) via PostgreSQL sequence.
+ * This helper provides a fallback sequential/numeric identifier.
  */
-export function generateOrderNumber(date: Date = new Date()): string {
-  const year = date.getFullYear();
-  const randomSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
-  return `${siteConfig.orderPrefix}-${year}-${randomSuffix}`;
+let fallbackCounter = 1;
+export function generateOrderNumber(): string {
+  return `${fallbackCounter++}`;
 }
 
 export function formatDateTime(date: Date | string | number): string {
