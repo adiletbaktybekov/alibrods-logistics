@@ -3,36 +3,77 @@
 import * as React from 'react';
 import { cn } from '@/lib/utils';
 import { Label } from '@/components/ui/label';
-import { formatNationalDigits } from '@/lib/phone';
+import {
+  CountryCode,
+  getAllCountries,
+  getCountryFlag,
+  getCountryCallingCodeSafe,
+  normalizePhoneNumber,
+  formatNationalDigits,
+} from '@/lib/phone';
+import { parsePhoneNumberFromString } from 'libphonenumber-js';
 
-export interface PhoneInputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'onChange'> {
+export interface PhoneInputProps
+  extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'onChange'> {
   label?: string;
   required?: boolean;
   error?: string;
   value?: string;
   defaultValue?: string;
+  defaultCountry?: CountryCode;
   onChange?: (value: string) => void;
 }
 
-/**
- * Extracts the 10 national digits from any raw phone representation.
- */
-function extractNational(raw?: string | null): string {
-  if (!raw) return '';
-  const trimmed = raw.trim();
-  if (!trimmed) return '';
+interface ParsedInitial {
+  country: CountryCode;
+  national: string;
+}
 
-  const cleanDigits = trimmed.replace(/\D/g, '');
-  if (trimmed.startsWith('+7')) {
-    return cleanDigits.slice(1, 11);
+function parseInitialPhone(raw?: string | null, fallbackCountry: CountryCode = 'KG'): ParsedInitial {
+  if (!raw || !raw.trim()) {
+    return { country: fallbackCountry, national: '' };
   }
-  if (cleanDigits.length === 11 && (cleanDigits.startsWith('7') || cleanDigits.startsWith('8'))) {
-    return cleanDigits.slice(1, 11);
+  const trimmed = raw.trim();
+
+  // If starts with +, parse internationally
+  if (trimmed.startsWith('+')) {
+    const p = parsePhoneNumberFromString(trimmed);
+    if (p) {
+      return {
+        country: p.country || fallbackCountry,
+        national: p.nationalNumber || '',
+      };
+    }
   }
-  if (cleanDigits.length === 10) {
-    return cleanDigits;
+
+  // Try parsing with fallbackCountry
+  const p = parsePhoneNumberFromString(trimmed, fallbackCountry);
+  if (p && p.isValid()) {
+    return {
+      country: p.country || fallbackCountry,
+      national: p.nationalNumber || '',
+    };
   }
-  return cleanDigits.slice(0, 10);
+
+  // Fallback: check if 11 digits starting with 7 or 8 (Russian trunk)
+  const clean = trimmed.replace(/\D/g, '');
+  if (clean.length === 11 && (clean.startsWith('7') || clean.startsWith('8'))) {
+    return {
+      country: 'RU',
+      national: clean.slice(1),
+    };
+  }
+  if (clean.startsWith('996') && clean.length === 12) {
+    return {
+      country: 'KG',
+      national: clean.slice(3),
+    };
+  }
+
+  return {
+    country: fallbackCountry,
+    national: clean,
+  };
 }
 
 export const PhoneInput = React.forwardRef<HTMLInputElement, PhoneInputProps>(
@@ -44,161 +85,318 @@ export const PhoneInput = React.forwardRef<HTMLInputElement, PhoneInputProps>(
       label = 'Номер Telegram',
       required = false,
       error,
-      placeholder = '955 123-45-67',
+      placeholder,
       defaultValue = '',
+      defaultCountry = 'KG',
       value,
       onChange,
+      disabled,
       ...props
     },
     ref
   ) => {
     const isControlled = value !== undefined;
-    const initialDigits = extractNational(isControlled ? value : defaultValue);
+    const initial = parseInitialPhone(isControlled ? value : defaultValue, defaultCountry);
 
-    const [digits, setDigits] = React.useState<string>(initialDigits);
+    const [country, setCountry] = React.useState<CountryCode>(initial.country);
+    const [nationalDigits, setNationalDigits] = React.useState<string>(initial.national);
     const [displayVal, setDisplayVal] = React.useState<string>(() =>
-      formatNationalDigits(initialDigits)
+      formatNationalDigits(initial.national, initial.country)
     );
+    const [dropdownOpen, setDropdownOpen] = React.useState<boolean>(false);
+    const [searchQuery, setSearchQuery] = React.useState<string>('');
     const [localError, setLocalError] = React.useState<string | null>(null);
 
+    const dropdownRef = React.useRef<HTMLDivElement>(null);
+    const searchInputRef = React.useRef<HTMLInputElement>(null);
+    const inputFieldRef = React.useRef<HTMLInputElement | null>(null);
+
+    // Sync controlled value changes
     React.useEffect(() => {
       if (isControlled) {
-        const nextDigits = extractNational(value);
-        setDigits(nextDigits);
-        setDisplayVal(formatNationalDigits(nextDigits));
+        const next = parseInitialPhone(value, country);
+        if (next.country !== country && value?.startsWith('+')) {
+          setCountry(next.country);
+        }
+        setNationalDigits(next.national);
+        setDisplayVal(formatNationalDigits(next.national, next.country));
       }
-    }, [isControlled, value]);
+    }, [isControlled, value, country]);
+
+    // Close dropdown on outside click
+    React.useEffect(() => {
+      const handleOutsideClick = (e: MouseEvent) => {
+        if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+          setDropdownOpen(false);
+        }
+      };
+      if (dropdownOpen) {
+        document.addEventListener('mousedown', handleOutsideClick);
+        setTimeout(() => searchInputRef.current?.focus(), 50);
+      }
+      return () => {
+        document.removeEventListener('mousedown', handleOutsideClick);
+      };
+    }, [dropdownOpen]);
+
+    const callingCode = getCountryCallingCodeSafe(country);
+    const flag = getCountryFlag(country);
+
+    // Compute canonical E.164 value
+    const canonicalValue = React.useMemo(() => {
+      if (!nationalDigits.trim()) return '';
+      const rawWithCode = `${callingCode}${nationalDigits.replace(/\D/g, '')}`;
+      return normalizePhoneNumber(rawWithCode, country);
+    }, [callingCode, nationalDigits, country]);
+
+    // Calculate dynamic placeholder if not provided
+    const dynamicPlaceholder = React.useMemo(() => {
+      if (placeholder) return placeholder;
+      if (country === 'KG') return '555 123 456';
+      if (country === 'RU' || country === 'KZ') return '955 123-45-67';
+      if (country === 'UZ') return '90 123 45 67';
+      if (country === 'DE') return '151 23456789';
+      if (country === 'US') return '(202) 555-0123';
+      return '123 456 789';
+    }, [placeholder, country]);
+
+    const handleSelectCountry = (newCountry: CountryCode) => {
+      setCountry(newCountry);
+      setDropdownOpen(false);
+      setSearchQuery('');
+      setLocalError(null);
+
+      // Reformat current national digits with new country mask
+      const nextDisplay = formatNationalDigits(nationalDigits, newCountry);
+      setDisplayVal(nextDisplay);
+
+      const nextCalling = getCountryCallingCodeSafe(newCountry);
+      const nextCanonical = nationalDigits ? normalizePhoneNumber(`${nextCalling}${nationalDigits}`, newCountry) : '';
+      onChange?.(nextCanonical);
+
+      inputFieldRef.current?.focus();
+    };
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       const raw = e.target.value;
       if (!raw.trim()) {
-        setDigits('');
+        setNationalDigits('');
         setDisplayVal('');
         setLocalError(null);
         onChange?.('');
         return;
       }
 
-      const rawDigits = raw.replace(/\D/g, '');
-
-      if (rawDigits.startsWith('0')) {
-        setLocalError('Номер не может начинаться с 0. Введите 10 цифр после +7');
-        const sanitized = rawDigits.replace(/^0+/, '').slice(0, 10);
-        setDigits(sanitized);
-        setDisplayVal(formatNationalDigits(sanitized));
-        const canonical = sanitized ? `+7${sanitized}` : '';
-        onChange?.(canonical);
-        return;
+      // Check if user typed or pasted with '+'
+      if (raw.includes('+')) {
+        const parsed = parsePhoneNumberFromString(raw);
+        if (parsed) {
+          const detectedCountry = parsed.country || country;
+          setCountry(detectedCountry);
+          setNationalDigits(parsed.nationalNumber);
+          setDisplayVal(parsed.formatNational());
+          setLocalError(null);
+          onChange?.(parsed.number);
+          return;
+        }
       }
 
+      // Clean digits
+      const digitsOnly = raw.replace(/\D/g, '');
+      setNationalDigits(digitsOnly);
+
+      const formatted = formatNationalDigits(digitsOnly, country);
+      setDisplayVal(formatted);
       setLocalError(null);
-      const national = rawDigits.slice(0, 10);
-      setDigits(national);
-      setDisplayVal(formatNationalDigits(national));
-      const canonical = national ? `+7${national}` : '';
-      onChange?.(canonical);
+
+      const nextCanonical = digitsOnly ? normalizePhoneNumber(`${callingCode}${digitsOnly}`, country) : '';
+      onChange?.(nextCanonical);
     };
 
     const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
       const pasted = e.clipboardData.getData('text').trim();
       if (!pasted) return;
 
-      const cleanDigits = pasted.replace(/\D/g, '');
+      // Attempt parsing pasted full number
+      if (pasted.startsWith('+') || pasted.replace(/\D/g, '').length >= 10) {
+        let parsed = parsePhoneNumberFromString(pasted);
+        if (!parsed) {
+          parsed = parsePhoneNumberFromString(pasted, country);
+        }
 
-      // Explicitly reject +996 / 996 without silently rewriting
-      if (pasted.startsWith('+996') || cleanDigits.startsWith('996')) {
-        e.preventDefault();
-        setLocalError('Номера с кодом +996 не поддерживаются. Пожалуйста, укажите российский номер (+7)');
-        return;
-      }
-
-      // Explicitly reject leading 0
-      if (pasted.startsWith('0') || (cleanDigits.startsWith('0') && !cleanDigits.startsWith('7') && !cleanDigits.startsWith('8'))) {
-        e.preventDefault();
-        setLocalError('Номер не может начинаться с 0. Введите 10 цифр после +7');
-        return;
-      }
-
-      let national = '';
-      if (pasted.startsWith('+7')) {
-        national = cleanDigits.slice(1);
-      } else if (cleanDigits.length === 11 && (cleanDigits.startsWith('7') || cleanDigits.startsWith('8'))) {
-        national = cleanDigits.slice(1);
-      } else if (cleanDigits.length === 10) {
-        national = cleanDigits;
-      } else if (cleanDigits.length > 10) {
-        if (cleanDigits.startsWith('77') || cleanDigits.startsWith('78')) {
+        if (parsed && parsed.isValid()) {
           e.preventDefault();
-          setLocalError('Обнаружен лишний префикс кода страны. Введите 10 цифр номера.');
+          const nextCountry = parsed.country || country;
+          setCountry(nextCountry);
+          setNationalDigits(parsed.nationalNumber);
+          setDisplayVal(parsed.formatNational());
+          setLocalError(null);
+          onChange?.(parsed.number);
           return;
         }
-        national = cleanDigits.slice(0, 10);
-      } else {
-        national = cleanDigits;
       }
 
-      if (national.startsWith('0')) {
-        e.preventDefault();
-        setLocalError('Номер не может начинаться с 0. Введите 10 цифр после +7');
-        return;
-      }
-
+      // If not fully valid international string, standard handling
       e.preventDefault();
-      setLocalError(null);
-      const trimmedNational = national.slice(0, 10);
-      setDigits(trimmedNational);
-      setDisplayVal(formatNationalDigits(trimmedNational));
-      const canonical = trimmedNational ? `+7${trimmedNational}` : '';
-      onChange?.(canonical);
+      const clean = pasted.replace(/\D/g, '');
+      setNationalDigits(clean);
+      const formatted = formatNationalDigits(clean, country);
+      setDisplayVal(formatted);
+      const nextCanonical = clean ? normalizePhoneNumber(`${callingCode}${clean}`, country) : '';
+      onChange?.(nextCanonical);
     };
 
-    const canonicalValue = digits ? `+7${digits}` : '';
+    const allCountries = React.useMemo(() => getAllCountries(), []);
+
+    const filteredCountries = React.useMemo(() => {
+      const q = searchQuery.trim().toLowerCase();
+      if (!q) return allCountries;
+      return allCountries.filter((c) => {
+        return (
+          c.name.toLowerCase().includes(q) ||
+          c.code.toLowerCase().includes(q) ||
+          c.callingCode.includes(q)
+        );
+      });
+    }, [allCountries, searchQuery]);
+
     const displayedError = localError || error;
 
     return (
-      <div className="w-full space-y-1.5">
+      <div className="w-full space-y-1.5" ref={dropdownRef}>
         {label && (
           <Label htmlFor={id} required={required} className="text-xs font-semibold text-slate-700">
             {label}
           </Label>
         )}
+
         <div
           className={cn(
-            'flex items-stretch rounded-xl border bg-white shadow-xs overflow-hidden transition-colors focus-within:ring-2 focus-within:ring-brand-500/20 focus-within:border-brand-500',
+            'relative flex items-stretch rounded-xl border bg-white shadow-xs transition-colors focus-within:ring-2 focus-within:ring-brand-500/20 focus-within:border-brand-500',
             displayedError
               ? 'border-rose-500 focus-within:ring-rose-500/20 focus-within:border-rose-500'
-              : 'border-slate-200'
+              : 'border-slate-200 hover:border-slate-300',
+            disabled && 'opacity-60 bg-slate-50 cursor-not-allowed'
           )}
         >
-          {/* Static fixed addon for country code +7 */}
-          <span
-            aria-hidden="true"
-            className="inline-flex items-center justify-center px-3.5 border-r border-slate-200 bg-slate-50 text-slate-700 font-mono font-semibold text-sm select-none"
+          {/* Country Selector Trigger */}
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => setDropdownOpen(!dropdownOpen)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 border-r border-slate-200 bg-slate-50 hover:bg-slate-100 transition-colors rounded-l-xl text-slate-800 font-mono text-sm select-none focus:outline-none focus:bg-slate-100"
+            title="Выбрать страну"
+            aria-label="Выбрать страну и телефонный код"
+            aria-expanded={dropdownOpen}
           >
-            +7
-          </span>
+            <span className="text-lg leading-none" role="img" aria-hidden="true">
+              {flag}
+            </span>
+            <span className="font-semibold text-xs sm:text-sm">{callingCode}</span>
+            <svg
+              className={cn(
+                'w-3.5 h-3.5 text-slate-500 transition-transform duration-200',
+                dropdownOpen && 'rotate-180 text-brand-600'
+              )}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
 
-          {/* National 10-digits input */}
+          {/* National Number Input */}
           <input
             {...props}
-            ref={ref}
+            ref={(node) => {
+              inputFieldRef.current = node;
+              if (typeof ref === 'function') {
+                ref(node);
+              } else if (ref) {
+                (ref as React.MutableRefObject<HTMLInputElement | null>).current = node;
+              }
+            }}
             id={id}
             type="tel"
-            inputMode="numeric"
-            autoComplete="tel-national"
+            inputMode="tel"
+            autoComplete="tel"
+            disabled={disabled}
             value={displayVal}
             onChange={handleInputChange}
             onPaste={handlePaste}
-            placeholder={placeholder}
+            placeholder={dynamicPlaceholder}
             required={required}
             className={cn(
-              'flex-1 h-10 bg-transparent px-3 py-2 text-sm text-slate-900 font-mono placeholder:text-slate-400 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50',
+              'flex-1 h-10 bg-transparent px-3 py-2 text-sm text-slate-900 font-mono placeholder:text-slate-400 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 rounded-r-xl',
               className
             )}
           />
+
+          {/* Country Dropdown Popover */}
+          {dropdownOpen && (
+            <div className="absolute top-full left-0 mt-1.5 w-72 sm:w-80 max-w-[90vw] bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden text-slate-900 animate-in fade-in-50 zoom-in-95 duration-150">
+              {/* Search Box */}
+              <div className="p-2 border-b border-slate-100 bg-slate-50/80">
+                <div className="relative">
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Поиск страны или кода (+996)..."
+                    className="w-full h-8 pl-8 pr-2 text-xs bg-white border border-slate-200 rounded-lg placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500"
+                  />
+                  <svg
+                    className="absolute left-2.5 top-2 w-3.5 h-3.5 text-slate-400"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                    />
+                  </svg>
+                </div>
+              </div>
+
+              {/* Countries Scroll List */}
+              <div className="max-h-60 overflow-y-auto divide-y divide-slate-50 text-xs">
+                {filteredCountries.length === 0 ? (
+                  <div className="p-4 text-center text-slate-400">Страна не найдена</div>
+                ) : (
+                  filteredCountries.map((c) => {
+                    const isSelected = c.code === country;
+                    return (
+                      <button
+                        key={c.code}
+                        type="button"
+                        onClick={() => handleSelectCountry(c.code)}
+                        className={cn(
+                          'w-full flex items-center justify-between px-3 py-2 text-left hover:bg-slate-50 transition-colors',
+                          isSelected && 'bg-brand-50/60 font-semibold text-brand-900'
+                        )}
+                      >
+                        <div className="flex items-center gap-2 truncate">
+                          <span className="text-base leading-none select-none" role="img" aria-hidden="true">
+                            {c.flag}
+                          </span>
+                          <span className="truncate">{c.name}</span>
+                        </div>
+                        <span className="font-mono text-slate-500 ml-2 shrink-0">{c.callingCode}</span>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Hidden input carries the full canonical +7XXXXXXXXXX for standard HTML forms */}
+        {/* Hidden input carries canonical standard E.164 (+XXXXXXXXXXXX) for standard HTML forms */}
         {name && <input type="hidden" name={name} value={canonicalValue} />}
 
         {displayedError && (
@@ -210,3 +408,4 @@ export const PhoneInput = React.forwardRef<HTMLInputElement, PhoneInputProps>(
 );
 
 PhoneInput.displayName = 'PhoneInput';
+

@@ -73,11 +73,10 @@ export default function MiniAppLinkPage() {
           <PhoneInput
             id="login"
             name="login"
-            label="Номер Telegram *"
+            label="Номер Telegram"
             required
             value={login}
             onChange={(val) => setLogin(val)}
-            placeholder="955 123-45-67"
           />
 
           <div>

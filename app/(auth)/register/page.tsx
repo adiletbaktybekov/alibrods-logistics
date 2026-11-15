@@ -58,7 +58,6 @@ export default function RegisterPage() {
               id="phone"
               name="phone"
               label="Номер Telegram"
-              placeholder="955 123-45-67"
               required
             />
           </div>

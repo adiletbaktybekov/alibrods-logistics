@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { MarketplaceType, OrderStatus } from '@prisma/client';
+import { optionalPhoneSchema } from '@/lib/phone';
 
 export const orderItemInputSchema = z.object({
   boxNumber: z.number().int().positive().optional(),
@@ -20,7 +21,7 @@ export const createOrderSchema = z.object({
   pickupAddress: z.string().min(3).optional(),
   pickupCity: z.string().optional(),
   pickupContactName: z.string().optional(),
-  pickupContactPhone: z.string().regex(/^\+?[1-9]\d{7,14}$/).optional(),
+  pickupContactPhone: optionalPhoneSchema,
   scheduledPickupAt: z.coerce.date().optional(),
   clientComment: z.string().max(1000).optional(),
   totalBoxesCount: z.number().int().min(0).optional(),

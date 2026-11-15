@@ -34,7 +34,6 @@ export default function LoginPage() {
             id="login"
             name="login"
             label="Номер Telegram"
-            placeholder="955 123-45-67"
             required
           />
         </div>

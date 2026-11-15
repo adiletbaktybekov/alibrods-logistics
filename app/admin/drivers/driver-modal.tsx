@@ -90,9 +90,8 @@ export function DriverModal() {
                 <PhoneInput
                   id="phone"
                   name="phone"
-                  label="Номер Telegram *"
+                  label="Номер Telegram"
                   required
-                  placeholder="955 123-45-67"
                 />
               </div>
 
