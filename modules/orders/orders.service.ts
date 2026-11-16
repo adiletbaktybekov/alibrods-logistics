@@ -441,6 +441,12 @@ export class OrdersService {
                 fullName: true,
                 vehicleModel: true,
                 vehiclePlateNumber: true,
+                notes: true,
+                user: {
+                  select: {
+                    phone: true,
+                  },
+                },
               },
             },
           },

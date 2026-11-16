@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { DriverModal } from './driver-modal';
+import { DriverEditModal } from './driver-edit-modal';
 import { DriverCodeButton } from './driver-code-button';
 import { DriverDeleteButton } from './driver-delete-button';
 import { buildDriversPaginationUrl, calculateDisplayRange } from '@/lib/pagination';
@@ -239,6 +240,20 @@ export default async function AdminDriversPage({ searchParams }: AdminDriversPag
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1.5">
+                            <DriverEditModal
+                              driver={{
+                                id: driver.id,
+                                fullName: driver.fullName,
+                                phone: driver.user?.phone || '',
+                                vehicleModel: driver.vehicleModel,
+                                vehiclePlateNumber: driver.vehiclePlateNumber,
+                                notes: driver.notes,
+                                isAvailable: driver.isAvailable,
+                                isActive: driver.user?.isActive ?? true,
+                                telegramUsername: tg?.username,
+                                telegramId: tg?.telegramId,
+                              }}
+                            />
                             <DriverCodeButton
                               driverId={driver.id}
                               driverName={driver.fullName}

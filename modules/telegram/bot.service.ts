@@ -795,10 +795,12 @@ export class TelegramBotService {
           warehouseName: d.isCustomWarehouse
             ? (d.customWarehouseName?.trim() || 'Индивидуальный склад')
             : (d.warehouse?.name || 'Склад'),
+          marketplace: d.warehouse?.marketplace || processedOrder.marketplace,
           deliveryDate: d.deliveryDate,
           palletsCount: d.palletsCount || 0,
           boxesCount: d.boxesCount || 0,
           isCustomWarehouse: d.isCustomWarehouse,
+          customWarehouseName: d.customWarehouseName,
           comment: d.comment,
         }));
 

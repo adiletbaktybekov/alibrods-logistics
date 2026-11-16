@@ -13,36 +13,89 @@ export function createMockPrisma() {
   const rateLimitEntries = new Map<string, any>();
   const driverPhotoSessions = new Map<string, any>();
 
+  const users = new Map<string, any>();
+
   // Seed default driver records
   const defaultDriver = {
     id: 'driver-uuid-1',
     userId: '11111111-1111-4111-a111-111111111111',
     fullName: 'Водитель Иванов',
-    user: { id: '11111111-1111-4111-a111-111111111111', role: UserRole.DRIVER, isActive: true },
+    vehicleModel: 'ГАЗель Next',
+    vehiclePlateNumber: 'A123BC77',
+    notes: 'Основной водитель',
+    isAvailable: true,
+    user: { id: '11111111-1111-4111-a111-111111111111', phone: '+79991112233', role: UserRole.DRIVER, isActive: true },
   };
   drivers.set(defaultDriver.id, defaultDriver);
+  users.set(defaultDriver.user.id, defaultDriver.user);
+
   drivers.set('driver-uuid-2', {
     id: 'driver-uuid-2',
     userId: '22222222-2222-4222-a222-222222222222',
     fullName: 'Водитель Петров',
-    user: { id: '22222222-2222-4222-a222-222222222222', role: UserRole.DRIVER, isActive: true },
+    vehicleModel: 'Ford Transit',
+    vehiclePlateNumber: 'B456OP77',
+    notes: null,
+    isAvailable: true,
+    user: { id: '22222222-2222-4222-a222-222222222222', phone: '+79992223344', role: UserRole.DRIVER, isActive: true },
   });
+  users.set('22222222-2222-4222-a222-222222222222', { id: '22222222-2222-4222-a222-222222222222', phone: '+79992223344', role: UserRole.DRIVER, isActive: true });
+
   drivers.set('mock-driver-1', {
     id: 'mock-driver-1',
     userId: '33333333-3333-4333-a333-333333333333',
     fullName: 'Водитель Сидоров',
-    user: { id: '33333333-3333-4333-a333-333333333333', role: UserRole.DRIVER, isActive: true },
+    vehicleModel: 'ГАЗель',
+    vehiclePlateNumber: 'C789EX77',
+    notes: null,
+    isAvailable: true,
+    user: { id: '33333333-3333-4333-a333-333333333333', phone: '+79993334455', role: UserRole.DRIVER, isActive: true },
   });
+  users.set('33333333-3333-4333-a333-333333333333', { id: '33333333-3333-4333-a333-333333333333', phone: '+79993334455', role: UserRole.DRIVER, isActive: true });
+
   drivers.set('mock-driver-single-use', {
     id: 'mock-driver-single-use',
     userId: '44444444-4444-4444-a444-444444444444',
     fullName: 'Водитель Single',
-    user: { id: '44444444-4444-4444-a444-444444444444', role: UserRole.DRIVER, isActive: true },
+    vehicleModel: null,
+    vehiclePlateNumber: null,
+    notes: null,
+    isAvailable: true,
+    user: { id: '44444444-4444-4444-a444-444444444444', phone: '+79994445566', role: UserRole.DRIVER, isActive: true },
   });
+  users.set('44444444-4444-4444-a444-444444444444', { id: '44444444-4444-4444-a444-444444444444', phone: '+79994445566', role: UserRole.DRIVER, isActive: true });
 
   const mockClient: any = {
     auditLog: {
       create: vi.fn(async ({ data }: any) => ({ id: `audit-${Date.now()}`, ...data })),
+    },
+    user: {
+      findFirst: vi.fn(async ({ where }: any) => {
+        for (const u of users.values()) {
+          if (where.phone && u.phone === where.phone) {
+            if (where.id?.not && u.id === where.id.not) continue;
+            return u;
+          }
+        }
+        return null;
+      }),
+      findUnique: vi.fn(async ({ where }: any) => {
+        if (where.id) return users.get(where.id) || null;
+        if (where.phone) {
+          for (const u of users.values()) {
+            if (u.phone === where.phone) return u;
+          }
+        }
+        return null;
+      }),
+      update: vi.fn(async ({ where, data }: any) => {
+        const u = users.get(where.id);
+        if (u) {
+          Object.assign(u, data);
+          return u;
+        }
+        return { id: where.id, ...data };
+      }),
     },
     driverProfile: {
       findUnique: vi.fn(async ({ where }: any) => {
@@ -52,8 +105,16 @@ export function createMockPrisma() {
           id: where.id,
           userId: randomId,
           fullName: 'Тестовый Водитель',
-          user: { id: randomId, role: UserRole.DRIVER, isActive: true },
+          user: { id: randomId, role: UserRole.DRIVER, isActive: true, phone: '+79995556677' },
         };
+      }),
+      update: vi.fn(async ({ where, data }: any) => {
+        const item = drivers.get(where.id);
+        if (item) {
+          Object.assign(item, data);
+          return item;
+        }
+        return { id: where.id, ...data };
       }),
     },
     clientProfile: {

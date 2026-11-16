@@ -74,24 +74,7 @@ export class NotificationDispatcherService {
       const clientTg = order.client?.user?.telegramAccount;
       if (clientTg?.telegramId) {
         const clientBot = getClientTelegramBotClient();
-        const pickupDateStr = order.scheduledPickupAt
-          ? new Date(order.scheduledPickupAt).toLocaleDateString('ru-RU')
-          : 'не указана';
-        const cargoStr =
-          order.totalPalletsCount > 0
-            ? `${order.totalPalletsCount} палл., ${order.totalBoxesCount} кор.`
-            : `${order.totalBoxesCount} кор.`;
-
-        const clientMsg = [
-          `📦 <b>Ваша заявка принята и отправлена на согласование!</b>`,
-          ``,
-          `Номер заявки: <code>#${order.orderNumber}</code>`,
-          `Склад назначения: <b>${getOrderWarehouseName(order)}</b>`,
-          `Планируемая дата: <b>${pickupDateStr}</b>`,
-          `Объём поставки: <b>${cargoStr}</b>`,
-          ``,
-          `<i>Заявка передана менеджерам AliBros Logistics. Мы сразу уведомим вас о результатах согласования и назначении водителя.</i>`,
-        ].join('\n');
+        const clientMsg = TelegramNotificationService.formatClientOrderCreatedMessage(order as any);
 
         await clientBot.sendMessageWithRetry({
           chatId: clientTg.telegramId.toString(),
@@ -116,10 +99,12 @@ export class NotificationDispatcherService {
         warehouseName: d.isCustomWarehouse
           ? (d.customWarehouseName?.trim() || 'Индивидуальный склад')
           : (d.warehouse?.name || 'Склад'),
+        marketplace: (d.warehouse as any)?.marketplace || order.marketplace,
         deliveryDate: d.deliveryDate,
         palletsCount: d.palletsCount || 0,
         boxesCount: d.boxesCount || 0,
         isCustomWarehouse: d.isCustomWarehouse,
+        customWarehouseName: d.customWarehouseName,
         comment: d.comment,
       }));
 
@@ -186,10 +171,12 @@ export class NotificationDispatcherService {
         warehouseName: d.isCustomWarehouse
           ? (d.customWarehouseName?.trim() || 'Индивидуальный склад')
           : (d.warehouse?.name || 'Склад'),
+        marketplace: (d.warehouse as any)?.marketplace || order.marketplace,
         deliveryDate: d.deliveryDate,
         palletsCount: d.palletsCount || 0,
         boxesCount: d.boxesCount || 0,
         isCustomWarehouse: d.isCustomWarehouse,
+        customWarehouseName: d.customWarehouseName,
         comment: d.comment,
       }));
 
@@ -323,11 +310,22 @@ export class NotificationDispatcherService {
           .filter(Boolean)
           .join('\n');
 
+        const warehouseLabel =
+          order.destinations && order.destinations.length > 1
+            ? `Склады: <b>${order.destinations
+                .map((d: any) =>
+                  d.isCustomWarehouse
+                    ? d.customWarehouseName || 'Инд. склад'
+                    : d.warehouse?.name || 'Склад'
+                )
+                .join(', ')}</b>`
+            : `Склад: <b>${getOrderWarehouseName(order)}</b>`;
+
         const clientText = [
           `🚛 <b>На вашу заявку назначен водитель!</b>`,
           ``,
           `Заявка: <code>#${order.orderNumber}</code>`,
-          `Склад: <b>${getOrderWarehouseName(order)}</b>`,
+          warehouseLabel,
           ``,
           driverDetails,
           ``,
@@ -370,10 +368,12 @@ export class NotificationDispatcherService {
         warehouseName: d.isCustomWarehouse
           ? (d.customWarehouseName?.trim() || 'Индивидуальный склад')
           : (d.warehouse?.name || 'Склад'),
+        marketplace: (d.warehouse as any)?.marketplace || order.marketplace,
         deliveryDate: d.deliveryDate,
         palletsCount: d.palletsCount || 0,
         boxesCount: d.boxesCount || 0,
         isCustomWarehouse: d.isCustomWarehouse,
+        customWarehouseName: d.customWarehouseName,
         comment: d.comment,
       }));
 

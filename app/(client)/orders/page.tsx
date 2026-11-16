@@ -107,38 +107,88 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {orders.map((order) => (
-                <TableRow key={order.id}>
-                  <TableCell className="font-mono font-medium text-brand-700">
-                    <Link href={`/orders/${order.id}`} className="hover:underline">
-                      {order.orderNumber}
-                    </Link>
-                  </TableCell>
-                  <TableCell className="text-slate-600 text-xs">
-                    {formatDateTime(order.createdAt)}
-                  </TableCell>
-                  <TableCell className="text-slate-900 text-xs font-medium">
-                    {order.scheduledPickupAt ? formatDateTime(order.scheduledPickupAt) : 'По согласованию'}
-                  </TableCell>
-                  <TableCell>
-                    <div className="font-medium text-slate-900">{order.warehouse?.name || '—'}</div>
-                    <div className="text-xs text-slate-500">{order.warehouse?.marketplace || order.marketplace}</div>
-                  </TableCell>
-                  <TableCell className="text-slate-700 text-sm">
-                    {order.totalPalletsCount ? `${order.totalPalletsCount} палл. / ` : ''}{order.totalBoxesCount} кор.
-                  </TableCell>
-                  <TableCell>
-                    <StatusBadge status={order.status} />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Link href={`/orders/${order.id}`}>
-                      <Button variant="outline" size="sm" className="text-xs">
-                        Открыть
-                      </Button>
-                    </Link>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {orders.map((order) => {
+                const destinations = order.destinations || [];
+                const hasMultipleWarehouses = destinations.length > 1;
+
+                // Format delivery dates
+                let deliveryDatesDisplay = 'По согласованию';
+                if (destinations.length > 0) {
+                  const dates = Array.from(
+                    new Set(
+                      destinations
+                        .map((d) => d.deliveryDate ? formatDateTime(d.deliveryDate).split(' ')[0] : null)
+                        .filter(Boolean)
+                    )
+                  );
+                  if (dates.length === 1) {
+                    deliveryDatesDisplay = dates[0]!;
+                  } else if (dates.length > 1) {
+                    deliveryDatesDisplay = `${dates[0]} – ${dates[dates.length - 1]} (${dates.length})`;
+                  }
+                } else if (order.scheduledPickupAt) {
+                  deliveryDatesDisplay = formatDateTime(order.scheduledPickupAt);
+                }
+
+                // Warehouses list preview
+                const warehouseNames = destinations.map((d) =>
+                  d.isCustomWarehouse
+                    ? d.customWarehouseName?.trim() || 'Инд. склад'
+                    : d.warehouse?.name || 'Склад'
+                );
+
+                return (
+                  <TableRow key={order.id}>
+                    <TableCell className="font-mono font-medium text-brand-700">
+                      <Link href={`/orders/${order.id}`} className="hover:underline">
+                        {order.orderNumber}
+                      </Link>
+                    </TableCell>
+                    <TableCell className="text-slate-600 text-xs">
+                      {formatDateTime(order.createdAt)}
+                    </TableCell>
+                    <TableCell className="text-slate-900 text-xs font-medium whitespace-nowrap">
+                      {deliveryDatesDisplay}
+                    </TableCell>
+                    <TableCell>
+                      {hasMultipleWarehouses ? (
+                        <div className="space-y-1">
+                          <span className="inline-flex items-center text-[11px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
+                            Складов: {destinations.length}
+                          </span>
+                          <div className="text-xs text-slate-600 max-w-xs truncate" title={warehouseNames.join(', ')}>
+                            {warehouseNames.join(', ')}
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          <div className="font-medium text-slate-900 text-xs">
+                            {warehouseNames[0] || order.warehouse?.name || '—'}
+                          </div>
+                          <div className="text-[11px] text-slate-500">
+                            {destinations[0]?.warehouse?.marketplace || order.warehouse?.marketplace || order.marketplace}
+                          </div>
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-slate-700 text-xs whitespace-nowrap font-medium">
+                      <span className="text-slate-900 font-semibold">{order.totalPalletsCount || 0} палл.</span>
+                      <span className="text-slate-400 mx-1">•</span>
+                      <span>{order.totalBoxesCount || 0} кор.</span>
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge status={order.status} />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Link href={`/orders/${order.id}`}>
+                        <Button variant="outline" size="sm" className="text-xs">
+                          Открыть
+                        </Button>
+                      </Link>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         ) : (

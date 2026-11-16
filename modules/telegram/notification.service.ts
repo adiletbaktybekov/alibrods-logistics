@@ -7,6 +7,7 @@ import { getDayOfWeekFromDate, RUSSIAN_DAY_NAMES } from '@/modules/warehouses/wa
 
 export interface TelegramDestinationItem {
   warehouseName: string;
+  marketplace?: string | null;
   deliveryDate?: Date | string | null;
   palletsCount: number;
   boxesCount: number;
@@ -129,14 +130,27 @@ export class TelegramNotificationService {
   }
 
   /**
+   * Helper to format marketplace name cleanly (Wildberries / Ozon)
+   */
+  public static formatMarketplaceName(mp?: string | null): string {
+    if (!mp) return '';
+    const upper = mp.toUpperCase().trim();
+    if (upper === 'WILDBERRIES' || upper === 'WB') return 'Wildberries';
+    if (upper === 'OZON') return 'Ozon';
+    return mp;
+  }
+
+  /**
    * Formats destinations list according to standard AliBros multi-warehouse template:
    * СКЛАДЫ:
    * • Склад Бишкек
+   *   Маркетплейс: Wildberries
    *   Дата доставки: 20.11.2026
    *   Паллеты: 3
    *   Коробки: 15
    * 
    * • Склад Москва
+   *   Маркетплейс: Wildberries
    *   Дата доставки: 21.11.2026
    *   Паллеты: 2
    *   Коробки: 10
@@ -180,10 +194,15 @@ export class TelegramNotificationService {
 
       const lines = [
         `• <b>${escapeHtml(whName)}</b>`,
+      ];
+      if (d.marketplace) {
+        lines.push(`  Маркетплейс: ${escapeHtml(this.formatMarketplaceName(d.marketplace))}`);
+      }
+      lines.push(
         `  Дата доставки: ${dateStr}`,
         `  Паллеты: ${d.palletsCount || 0}`,
         `  Коробки: ${d.boxesCount || 0}`,
-      ];
+      );
       if (d.comment && d.comment.trim()) {
         lines.push(`  Примечание: <i>${escapeHtml(d.comment.trim())}</i>`);
       }
@@ -207,6 +226,157 @@ export class TelegramNotificationService {
       `Паллеты: ${computedTotalPallets}`,
       `Коробки: ${computedTotalBoxes}`,
     ].join('\n');
+  }
+
+  /**
+   * Formats client order creation notification for @AliBrosClientBot
+   */
+  public static formatClientOrderCreatedMessage(order: {
+    orderNumber: string;
+    warehouse?: { name?: string; marketplace?: string } | null;
+    warehouseName?: string;
+    marketplace?: string;
+    scheduledPickupAt?: Date | string | null;
+    totalPalletsCount?: number;
+    totalBoxesCount?: number;
+    clientComment?: string | null;
+    destinations?: Array<{
+      isCustomWarehouse?: boolean;
+      customWarehouseName?: string | null;
+      warehouse?: { name?: string; marketplace?: string } | null;
+      warehouseName?: string;
+      marketplace?: string;
+      deliveryDate?: Date | string | null;
+      palletsCount: number;
+      boxesCount: number;
+      comment?: string | null;
+    }> | null;
+  }): string {
+    const destinations = order.destinations || [];
+    const clientComment = order.clientComment ? order.clientComment.trim() : '';
+
+    if (destinations.length > 1) {
+      const items = destinations.map((d) => {
+        let dateStr = 'не указана';
+        if (d.deliveryDate) {
+          if (typeof d.deliveryDate === 'string' && /^\d{2}\.\d{2}\.\d{4}$/.test(d.deliveryDate.trim())) {
+            dateStr = d.deliveryDate.trim();
+          } else {
+            try {
+              const dateObj = typeof d.deliveryDate === 'string' ? new Date(d.deliveryDate) : d.deliveryDate;
+              if (!isNaN(dateObj.getTime())) {
+                const day = String(dateObj.getUTCDate()).padStart(2, '0');
+                const month = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
+                const year = dateObj.getUTCFullYear();
+                dateStr = `${day}.${month}.${year}`;
+              }
+            } catch {
+              dateStr = 'не указана';
+            }
+          }
+        }
+
+        const whName = d.isCustomWarehouse
+          ? (d.customWarehouseName?.trim() || d.warehouseName || 'Индивидуальный склад')
+          : (d.warehouse?.name || d.warehouseName || 'Склад');
+        const mpName = this.formatMarketplaceName(d.warehouse?.marketplace || d.marketplace || order.marketplace);
+
+        const lines = [
+          `• <b>${escapeHtml(whName)}</b>`,
+          `Маркетплейс: ${escapeHtml(mpName || 'Wildberries')}`,
+          `Дата: ${dateStr}`,
+          `Паллеты: ${d.palletsCount || 0}`,
+          `Коробки: ${d.boxesCount || 0}`,
+        ];
+        if (d.comment && d.comment.trim()) {
+          lines.push(`Примечание: <i>${escapeHtml(d.comment.trim())}</i>`);
+        }
+        return lines.join('\n');
+      });
+
+      const totalPallets =
+        typeof order.totalPalletsCount === 'number'
+          ? order.totalPalletsCount
+          : destinations.reduce((sum, d) => sum + (d.palletsCount || 0), 0);
+      const totalBoxes =
+        typeof order.totalBoxesCount === 'number'
+          ? order.totalBoxesCount
+          : destinations.reduce((sum, d) => sum + (d.boxesCount || 0), 0);
+
+      const parts = [
+        `📦 <b>Ваша заявка принята и отправлена на согласование!</b>`,
+        `Номер заявки: <code>#${order.orderNumber}</code>`,
+        `Склады назначения:`,
+        items.join('\n\n'),
+        ``,
+        `Итого:`,
+        `Паллеты: ${totalPallets}`,
+        `Коробки: ${totalBoxes}`,
+      ];
+
+      if (clientComment) {
+        parts.push(``, `💬 <b>Комментарий:</b> <i>${escapeHtml(clientComment)}</i>`);
+      }
+
+      parts.push(
+        ``,
+        `<i>Заявка передана менеджерам AliBros Logistics. Мы сразу уведомим вас о результатах согласования и назначении водителя.</i>`
+      );
+
+      return parts.join('\n');
+    }
+
+    // Single warehouse (or 0 fallback)
+    const singleDest = destinations[0];
+    const whName = singleDest
+      ? (singleDest.isCustomWarehouse
+          ? (singleDest.customWarehouseName?.trim() || singleDest.warehouseName || 'Индивидуальный склад')
+          : (singleDest.warehouse?.name || singleDest.warehouseName || order.warehouse?.name || order.warehouseName || 'Склад'))
+      : (order.warehouse?.name || order.warehouseName || 'Склад');
+
+    const rawDate = singleDest?.deliveryDate || order.scheduledPickupAt;
+    let pickupDateStr = 'не указана';
+    if (rawDate) {
+      if (typeof rawDate === 'string' && /^\d{2}\.\d{2}\.\d{4}$/.test(rawDate.trim())) {
+        pickupDateStr = rawDate.trim();
+      } else {
+        try {
+          const dateObj = typeof rawDate === 'string' ? new Date(rawDate) : rawDate;
+          if (!isNaN(dateObj.getTime())) {
+            const day = String(dateObj.getUTCDate()).padStart(2, '0');
+            const month = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
+            const year = dateObj.getUTCFullYear();
+            pickupDateStr = `${day}.${month}.${year}`;
+          }
+        } catch {
+          pickupDateStr = 'не указана';
+        }
+      }
+    }
+
+    const pallets = singleDest ? (singleDest.palletsCount || 0) : (order.totalPalletsCount || 0);
+    const boxes = singleDest ? (singleDest.boxesCount || 0) : (order.totalBoxesCount || 0);
+
+    const parts = [
+      `📦 <b>Ваша заявка принята и отправлена на согласование!</b>`,
+      `Номер заявки: <code>#${order.orderNumber}</code>`,
+      `Склад назначения: <b>${escapeHtml(whName)}</b>`,
+      `Планируемая дата: <b>${pickupDateStr}</b>`,
+      `Объём поставки:`,
+      `Паллеты: <b>${pallets}</b>`,
+      `Коробки: <b>${boxes}</b>`,
+    ];
+
+    if (clientComment) {
+      parts.push(``, `💬 <b>Комментарий:</b> <i>${escapeHtml(clientComment)}</i>`);
+    }
+
+    parts.push(
+      ``,
+      `<i>Заявка передана менеджерам AliBros Logistics. Мы сразу уведомим вас о результатах согласования и назначении водителя.</i>`
+    );
+
+    return parts.join('\n');
   }
 
   /**

@@ -2,6 +2,7 @@ import { prisma } from '@/database/prisma';
 import { NotFoundError, ConflictError, ForbiddenError } from '@/lib/errors';
 import { Prisma, UserRole, AuditAction } from '@prisma/client';
 import { AuditService } from '@/modules/audit/audit.service';
+import { normalizePhoneNumber, validatePhoneNumber } from '@/lib/phone';
 import { CreateDriverProfileDto, RegisterDriverDto } from './drivers.dto';
 
 export type DriverListItem = Prisma.DriverProfileGetPayload<{
@@ -377,6 +378,152 @@ export class DriversService {
         message: `Аккаунт водителя «${driverName}» удалён, сессия отозвана, Telegram отвязан. История ${totalAssignmentsCount} завершённых доставок сохранена в архиве.`,
       };
     }
+  }
+
+  /**
+   * Updates driver profile and credentials by administrator
+   */
+  public static async updateDriverByAdmin(
+    driverProfileId: string,
+    data: {
+      fullName: string;
+      phone: string;
+      vehicleModel?: string | null;
+      vehiclePlateNumber?: string | null;
+      notes?: string | null;
+      isAvailable?: boolean;
+      isActive?: boolean;
+    },
+    performedByUserId: string,
+    ipAddress?: string
+  ): Promise<{ success: boolean; message: string }> {
+    if (!process.env.DATABASE_URL) throw new Error('Database not configured');
+
+    const driver = await prisma.driverProfile.findUnique({
+      where: { id: driverProfileId },
+      include: {
+        user: true,
+      },
+    });
+
+    if (!driver) {
+      throw new NotFoundError('DriverProfile', driverProfileId);
+    }
+
+    const trimmedName = data.fullName.trim();
+    if (trimmedName.length < 2) {
+      throw new Error('ФИО водителя должно содержать минимум 2 символа');
+    }
+
+    const phoneValidation = validatePhoneNumber(data.phone.trim(), 'RU');
+    if (!phoneValidation.isValid) {
+      throw new Error('Укажите корректный номер телефона водителя');
+    }
+    const normalizedPhone = phoneValidation.normalized || normalizePhoneNumber(data.phone.trim(), 'RU');
+    if (!normalizedPhone) {
+      throw new Error('Укажите корректный номер телефона водителя');
+    }
+
+    // Check if phone is already taken by another user
+    if (normalizedPhone !== driver.user.phone) {
+      const existingUser = await prisma.user.findFirst({
+        where: {
+          phone: normalizedPhone,
+          id: { not: driver.userId },
+        },
+      });
+      if (existingUser) {
+        throw new ConflictError('Пользователь с таким номером телефона уже зарегистрирован в системе');
+      }
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: driver.userId },
+        data: {
+          phone: normalizedPhone,
+          isActive: typeof data.isActive === 'boolean' ? data.isActive : undefined,
+        },
+      });
+
+      await tx.driverProfile.update({
+        where: { id: driverProfileId },
+        data: {
+          fullName: trimmedName,
+          vehicleModel: data.vehicleModel !== undefined ? (data.vehicleModel?.trim() || null) : undefined,
+          vehiclePlateNumber: data.vehiclePlateNumber !== undefined ? (data.vehiclePlateNumber?.trim() || null) : undefined,
+          notes: data.notes !== undefined ? (data.notes?.trim() || null) : undefined,
+          isAvailable: typeof data.isAvailable === 'boolean' ? data.isAvailable : undefined,
+        },
+      });
+    });
+
+    await AuditService.log({
+      userId: performedByUserId,
+      action: AuditAction.UPDATE,
+      resource: 'DriverProfile',
+      resourceId: driver.id,
+      ipAddress,
+      metadata: {
+        driverName: trimmedName,
+        phone: normalizedPhone,
+        isAvailable: data.isAvailable,
+        isActive: data.isActive,
+      },
+    });
+
+    return {
+      success: true,
+      message: `Данные водителя «${trimmedName}» успешно обновлены`,
+    };
+  }
+
+  /**
+   * Safely unlinks driver's Telegram account so they can reconnect via Driver Bot
+   */
+  public static async unlinkTelegram(
+    driverProfileId: string,
+    performedByUserId: string,
+    ipAddress?: string
+  ): Promise<{ success: boolean; message: string }> {
+    if (!process.env.DATABASE_URL) throw new Error('Database not configured');
+
+    const driver = await prisma.driverProfile.findUnique({
+      where: { id: driverProfileId },
+      include: {
+        user: {
+          include: {
+            telegramAccount: true,
+          },
+        },
+      },
+    });
+
+    if (!driver) {
+      throw new NotFoundError('DriverProfile', driverProfileId);
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.telegramPairingCode.deleteMany({ where: { userId: driver.userId } });
+      await tx.telegramAccount.deleteMany({ where: { userId: driver.userId } });
+    });
+
+    await AuditService.log({
+      userId: performedByUserId,
+      action: AuditAction.UPDATE,
+      resource: 'DriverProfile',
+      resourceId: driver.id,
+      ipAddress,
+      metadata: {
+        driverName: driver.fullName,
+        action: 'UNLINK_TELEGRAM',
+      },
+    });
+
+    return {
+      success: true,
+      message: `Telegram аккаунт водителя «${driver.fullName}» успешно отвязан. Водитель может сгенерировать новый код и повторно привязать бота.`,
+    };
   }
 }
 

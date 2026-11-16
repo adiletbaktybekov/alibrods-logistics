@@ -310,48 +310,7 @@ export default async function AdminOrderDetailPage({ params }: AdminOrderDetailP
             </CardContent>
           </Card>
 
-          {/* Cargo Breakdown / Boxes Table */}
-          {order.items && order.items.length > 0 && (
-            <Card className="border-slate-200 shadow-sm bg-white overflow-hidden">
-              <CardHeader className="pb-3 border-b border-slate-100">
-                <CardTitle className="text-sm font-bold text-slate-900">
-                  Спецификация мест ({order.items.length})
-                </CardTitle>
-              </CardHeader>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider text-[10px] border-b border-slate-200">
-                    <tr>
-                      <th className="py-2.5 px-3 font-semibold">№</th>
-                      <th className="py-2.5 px-3 font-semibold">Штрихкод</th>
-                      <th className="py-2.5 px-3 font-semibold">Габариты (Д×Ш×В)</th>
-                      <th className="py-2.5 px-3 font-semibold">Вес</th>
-                      <th className="py-2.5 px-3 font-semibold">Товар / Описание</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 text-slate-700">
-                    {order.items.map((item, idx) => (
-                      <tr key={item.id} className="hover:bg-slate-50/50">
-                        <td className="py-2 px-3 font-medium text-slate-900">{item.boxNumber || idx + 1}</td>
-                        <td className="py-2 px-3 font-mono text-[11px]">{item.boxBarcode || '—'}</td>
-                        <td className="py-2 px-3 whitespace-nowrap">
-                          {item.lengthCm && item.widthCm && item.heightCm
-                            ? `${item.lengthCm}×${item.widthCm}×${item.heightCm} см`
-                            : '—'}
-                        </td>
-                        <td className="py-2 px-3 whitespace-nowrap">
-                          {item.weightKg ? `${item.weightKg} кг` : '—'}
-                        </td>
-                        <td className="py-2 px-3">
-                          {item.productName || item.cargoDescription || item.article || '—'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-          )}
+
 
           {/* Photo Reports */}
           <Card className="border-slate-200 shadow-sm bg-white">

@@ -993,6 +993,46 @@ export async function deleteDriverAction(driverId: string) {
   }
 }
 
+export async function updateDriverAction(
+  driverProfileId: string,
+  data: {
+    fullName: string;
+    phone: string;
+    vehicleModel?: string | null;
+    vehiclePlateNumber?: string | null;
+    notes?: string | null;
+    isAvailable?: boolean;
+    isActive?: boolean;
+  }
+) {
+  try {
+    const actor = await requireAdminUser();
+    const result = await DriversService.updateDriverByAdmin(driverProfileId, data, actor.id);
+    revalidatePath('/admin/drivers');
+    revalidatePath('/admin/orders');
+    return { success: true, message: result.message };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Не удалось обновить данные водителя',
+    };
+  }
+}
+
+export async function unlinkDriverTelegramAction(driverProfileId: string) {
+  try {
+    const actor = await requireAdminUser();
+    const result = await DriversService.unlinkTelegram(driverProfileId, actor.id);
+    revalidatePath('/admin/drivers');
+    return { success: true, message: result.message };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Не удалось отвязать Telegram водителя',
+    };
+  }
+}
+
 export async function updateClientAdminAction(
   clientId: string,
   data: { warehouseAddress?: string; notes?: string }
