@@ -127,11 +127,13 @@ export default async function MiniAppOrdersPage({ searchParams }: MiniAppOrdersP
 
                   <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500 bg-slate-50 px-2.5 py-1.5 rounded-lg">
                     <span>
-                      {order.totalPalletsCount > 0 ? (
-                        <strong className="text-indigo-600 font-semibold">{order.totalPalletsCount} палл.</strong>
-                      ) : (
-                        <span>{order.totalBoxesCount} кор.</span>
+                      {order.totalPalletsCount > 0 && (
+                        <strong className="text-indigo-600 font-semibold">
+                          {order.totalPalletsCount} палл.{order.totalBoxesCount > 0 ? ' • ' : ''}
+                        </strong>
                       )}
+                      {order.totalBoxesCount > 0 && <span>{order.totalBoxesCount} кор.</span>}
+                      {order.totalPalletsCount === 0 && order.totalBoxesCount === 0 && '0 кор.'}
                     </span>
                     <span className="text-brand-600 font-semibold">Подробнее →</span>
                   </div>

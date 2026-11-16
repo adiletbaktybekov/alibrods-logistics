@@ -47,6 +47,7 @@ describe('CRITICAL: Client Order Creation End-to-End on Neon Staging', () => {
       email: testEmail,
       password: 'password8', // >= 8 chars, simplified
       inn: '123456789012',
+      warehouseAddress: 'г. Бишкек, ул. Лермонтова, 1А',
     });
 
     expect(reg.user).toBeDefined();

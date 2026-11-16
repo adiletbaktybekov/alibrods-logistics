@@ -269,11 +269,11 @@ export function DashboardClient({ initialStats }: DashboardClientProps) {
             </CardHeader>
             <CardContent className="px-4 pb-4 space-y-1">
               <div className="flex items-baseline gap-3">
-                <div className="text-xl sm:text-2xl font-extrabold text-slate-900 font-mono">
-                  {stats.totalBoxes} <span className="text-xs font-normal text-slate-500 font-sans">кор.</span>
-                </div>
                 <div className="text-xl sm:text-2xl font-extrabold text-indigo-700 font-mono">
                   {stats.totalPallets} <span className="text-xs font-normal text-slate-500 font-sans">палл.</span>
+                </div>
+                <div className="text-xl sm:text-2xl font-extrabold text-slate-900 font-mono">
+                  {stats.totalBoxes} <span className="text-xs font-normal text-slate-500 font-sans">кор.</span>
                 </div>
               </div>
               <p className="text-[11px] text-slate-500 truncate">
@@ -563,14 +563,15 @@ export function DashboardClient({ initialStats }: DashboardClientProps) {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <div className="text-xs text-slate-700">
-                            {order.totalPalletsCount > 0 ? (
+                          <div className="text-xs text-slate-700 font-mono">
+                            {order.totalPalletsCount > 0 && (
                               <span className="font-semibold text-indigo-600">
                                 {order.totalPalletsCount} палл.
+                                {order.totalBoxesCount > 0 ? ', ' : ''}
                               </span>
-                            ) : (
-                              <span>{order.totalBoxesCount} кор.</span>
                             )}
+                            {order.totalBoxesCount > 0 && `${order.totalBoxesCount} кор.`}
+                            {order.totalPalletsCount === 0 && order.totalBoxesCount === 0 && '—'}
                           </div>
                         </TableCell>
                         <TableCell>

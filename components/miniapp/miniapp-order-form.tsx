@@ -256,33 +256,6 @@ export function MiniAppOrderForm({ warehouses }: MiniAppOrderFormProps) {
             {/* Cargo volume */}
             <div className="grid grid-cols-2 gap-3 pt-1">
               <div>
-                <Label className="text-[11px] text-slate-600">Коробок (шт.)</Label>
-                <div className="flex items-center gap-1 mt-1">
-                  <button
-                    type="button"
-                    onClick={() => updateDestination(dest.id, 'boxesCount', Math.max(0, dest.boxesCount - 1))}
-                    className="w-7 h-7 rounded bg-slate-100 text-slate-700 font-bold text-xs flex items-center justify-center active:bg-slate-200"
-                  >
-                    −
-                  </button>
-                  <input
-                    type="number"
-                    min="0"
-                    value={dest.boxesCount}
-                    onChange={(e) => updateDestination(dest.id, 'boxesCount', Math.max(0, parseInt(e.target.value, 10) || 0))}
-                    className="w-full text-center rounded border border-slate-300 py-1 text-xs font-semibold"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => updateDestination(dest.id, 'boxesCount', dest.boxesCount + 1)}
-                    className="w-7 h-7 rounded bg-slate-100 text-slate-700 font-bold text-xs flex items-center justify-center active:bg-slate-200"
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-
-              <div>
                 <Label className="text-[11px] text-slate-600">Паллет (шт.)</Label>
                 <div className="flex items-center gap-1 mt-1">
                   <button
@@ -302,6 +275,33 @@ export function MiniAppOrderForm({ warehouses }: MiniAppOrderFormProps) {
                   <button
                     type="button"
                     onClick={() => updateDestination(dest.id, 'palletsCount', dest.palletsCount + 1)}
+                    className="w-7 h-7 rounded bg-slate-100 text-slate-700 font-bold text-xs flex items-center justify-center active:bg-slate-200"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <Label className="text-[11px] text-slate-600">Коробок (шт.)</Label>
+                <div className="flex items-center gap-1 mt-1">
+                  <button
+                    type="button"
+                    onClick={() => updateDestination(dest.id, 'boxesCount', Math.max(0, dest.boxesCount - 1))}
+                    className="w-7 h-7 rounded bg-slate-100 text-slate-700 font-bold text-xs flex items-center justify-center active:bg-slate-200"
+                  >
+                    −
+                  </button>
+                  <input
+                    type="number"
+                    min="0"
+                    value={dest.boxesCount}
+                    onChange={(e) => updateDestination(dest.id, 'boxesCount', Math.max(0, parseInt(e.target.value, 10) || 0))}
+                    className="w-full text-center rounded border border-slate-300 py-1 text-xs font-semibold"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => updateDestination(dest.id, 'boxesCount', dest.boxesCount + 1)}
                     className="w-7 h-7 rounded bg-slate-100 text-slate-700 font-bold text-xs flex items-center justify-center active:bg-slate-200"
                   >
                     +
@@ -351,7 +351,7 @@ export function MiniAppOrderForm({ warehouses }: MiniAppOrderFormProps) {
         >
           {isPending
             ? 'Создание заявки...'
-            : `Отправить заявку (${totalBoxes} кор. • ${totalPallets} палл.)`}
+            : `Отправить заявку (${totalPallets} палл. • ${totalBoxes} кор.)`}
         </Button>
       </div>
     </form>

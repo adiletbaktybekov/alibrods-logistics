@@ -247,15 +247,21 @@ export default async function AdminOrdersPage({ searchParams }: AdminOrdersPageP
                         </div>
                       </TableCell>
                       <TableCell className="text-xs">
-                        {order.totalPalletsCount > 0 ? (
-                          <span className="font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">
-                            {order.totalPalletsCount} палл.
-                          </span>
-                        ) : (
-                          <span className="text-slate-700 font-medium">
-                            {order.totalBoxesCount} кор.
-                          </span>
-                        )}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {order.totalPalletsCount > 0 && (
+                            <span className="font-semibold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded">
+                              {order.totalPalletsCount} палл.
+                            </span>
+                          )}
+                          {order.totalBoxesCount > 0 && (
+                            <span className="text-slate-700 font-medium">
+                              {order.totalBoxesCount} кор.
+                            </span>
+                          )}
+                          {order.totalPalletsCount === 0 && order.totalBoxesCount === 0 && (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell className="text-xs text-slate-700 whitespace-nowrap">
                         {order.scheduledPickupAt ? (

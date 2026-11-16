@@ -52,6 +52,21 @@ export default function RegisterPage() {
           />
         </div>
 
+        <div>
+          <Label htmlFor="warehouseAddress" required>
+            Адрес склада
+          </Label>
+          <Input
+            id="warehouseAddress"
+            name="warehouseAddress"
+            placeholder="Укажите полный адрес вашего склада (страна, город, улица, номер здания/склада)"
+            required
+          />
+          <p className="mt-1 text-[11px] text-slate-500">
+            Страна, город, улица, номер здания или склада (куда водитель прибудет за товаром)
+          </p>
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <PhoneInput

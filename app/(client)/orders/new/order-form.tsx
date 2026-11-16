@@ -281,21 +281,8 @@ export function OrderForm({ warehouses }: OrderFormProps) {
                   />
                 </div>
 
-                {/* Cargo Quantities (Boxes & Pallets) */}
+                {/* Cargo Quantities (Pallets & Boxes) */}
                 <div className="grid grid-cols-2 gap-4 pt-1">
-                  <div>
-                    <Label htmlFor={`boxes-${dest.id}`} required>
-                      Коробок
-                    </Label>
-                    <Input
-                      id={`boxes-${dest.id}`}
-                      type="number"
-                      min="0"
-                      value={dest.boxesCount}
-                      onChange={(e) => updateDestination(dest.id, 'boxesCount', Math.max(0, parseInt(e.target.value, 10) || 0))}
-                      required
-                    />
-                  </div>
                   <div>
                     <Label htmlFor={`pallets-${dest.id}`} required>
                       Паллет
@@ -306,6 +293,19 @@ export function OrderForm({ warehouses }: OrderFormProps) {
                       min="0"
                       value={dest.palletsCount}
                       onChange={(e) => updateDestination(dest.id, 'palletsCount', Math.max(0, parseInt(e.target.value, 10) || 0))}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor={`boxes-${dest.id}`} required>
+                      Коробок
+                    </Label>
+                    <Input
+                      id={`boxes-${dest.id}`}
+                      type="number"
+                      min="0"
+                      value={dest.boxesCount}
+                      onChange={(e) => updateDestination(dest.id, 'boxesCount', Math.max(0, parseInt(e.target.value, 10) || 0))}
                       required
                     />
                   </div>
@@ -360,7 +360,7 @@ export function OrderForm({ warehouses }: OrderFormProps) {
             disabled={isPending || (totalBoxes === 0 && totalPallets === 0)}
             className="shadow-sm"
           >
-            Отправить заявку ({totalBoxes} кор. • {totalPallets} палл.)
+            Отправить заявку ({totalPallets} палл. • {totalBoxes} кор.)
           </Button>
         </div>
       </div>
@@ -394,7 +394,9 @@ export function OrderForm({ warehouses }: OrderFormProps) {
                           {idx + 1}. {name}
                         </span>
                         <span className="font-mono text-slate-600">
-                          {d.boxesCount} кор.{d.palletsCount > 0 ? ` / ${d.palletsCount} палл.` : ''}
+                          {d.palletsCount > 0 ? `${d.palletsCount} палл.` : ''}
+                          {d.palletsCount > 0 && d.boxesCount > 0 ? ' / ' : ''}
+                          {d.boxesCount > 0 || d.palletsCount === 0 ? `${d.boxesCount} кор.` : ''}
                         </span>
                       </div>
                     );
@@ -404,15 +406,15 @@ export function OrderForm({ warehouses }: OrderFormProps) {
 
               <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">
                 <div>
-                  <span className="text-slate-500">Всего коробок:</span>
-                  <div className="text-xl font-bold font-mono text-indigo-600 mt-0.5">
-                    {totalBoxes} шт.
-                  </div>
-                </div>
-                <div>
                   <span className="text-slate-500">Всего паллет:</span>
                   <div className="text-xl font-bold font-mono text-brand-600 mt-0.5">
                     {totalPallets} шт.
+                  </div>
+                </div>
+                <div>
+                  <span className="text-slate-500">Всего коробок:</span>
+                  <div className="text-xl font-bold font-mono text-indigo-600 mt-0.5">
+                    {totalBoxes} шт.
                   </div>
                 </div>
               </div>

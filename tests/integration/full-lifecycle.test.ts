@@ -66,6 +66,7 @@ describe('Phase 8: End-to-End Full Order Lifecycle & System Integration', () => 
           contactPerson: 'Иванов Иван',
           phone: '+79001112233',
           password: 'short',
+          warehouseAddress: 'г. Москва, ул. Складская, 5',
         })
       ).rejects.toThrow();
     });

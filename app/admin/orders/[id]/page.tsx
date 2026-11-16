@@ -152,8 +152,8 @@ export default async function AdminOrderDetailPage({ params }: AdminOrderDetailP
               <div className="text-xs font-semibold text-slate-700">
                 Итого:{' '}
                 <span className="text-indigo-600">
+                  {order.totalPalletsCount > 0 && `${order.totalPalletsCount} палл. • `}
                   {order.totalBoxesCount} кор.
-                  {order.totalPalletsCount > 0 && ` • ${order.totalPalletsCount} палл.`}
                 </span>
               </div>
             </CardHeader>
@@ -213,8 +213,8 @@ export default async function AdminOrderDetailPage({ params }: AdminOrderDetailP
                             <div className="border-l border-slate-200 pl-3">
                               <span className="text-slate-400 block text-[10px] uppercase">Объём</span>
                               <span className="font-bold text-slate-900 text-xs">
+                                {dest.palletsCount > 0 && `${dest.palletsCount} палл. / `}
                                 {dest.boxesCount} кор.
-                                {dest.palletsCount > 0 && ` / ${dest.palletsCount} палл.`}
                               </span>
                             </div>
                           </div>
@@ -245,7 +245,10 @@ export default async function AdminOrderDetailPage({ params }: AdminOrderDetailP
                     <span className="text-slate-500 block">Объём партии:</span>
                     <div className="font-semibold text-slate-900 text-sm mt-0.5">
                       {order.totalPalletsCount > 0 ? (
-                        <span className="text-indigo-600">{order.totalPalletsCount} палл.</span>
+                        <span className="text-indigo-600">
+                          {order.totalPalletsCount} палл.
+                          {order.totalBoxesCount > 0 && ` / ${order.totalBoxesCount} кор.`}
+                        </span>
                       ) : (
                         <span>{order.totalBoxesCount} кор.</span>
                       )}

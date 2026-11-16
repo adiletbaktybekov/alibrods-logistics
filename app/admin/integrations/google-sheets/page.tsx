@@ -257,7 +257,9 @@ export default async function GoogleSheetsIntegrationPage() {
                       {o.warehouse ? `${o.warehouse.name} (${o.warehouse.marketplace})` : '—'}
                     </td>
                     <td className="py-2 px-3 whitespace-nowrap">
-                      {o.totalPalletsCount > 0 ? `${o.totalPalletsCount} палл.` : `${o.totalBoxesCount} кор.`}
+                      {o.totalPalletsCount > 0
+                        ? `${o.totalPalletsCount} палл.${o.totalBoxesCount > 0 ? ` / ${o.totalBoxesCount} кор.` : ''}`
+                        : `${o.totalBoxesCount} кор.`}
                     </td>
                     <td className="py-2 px-3">
                       <StatusBadge status={o.status} className="text-[10px]" />

@@ -18,6 +18,7 @@ interface ProfileFormProps {
     contactPhone: string;
     contactEmail?: string | null;
     inn?: string | null;
+    warehouseAddress?: string | null;
     defaultWarehouseId?: string | null;
   };
   warehouses: WarehouseItem[];
@@ -93,6 +94,21 @@ export function ProfileForm({ client, warehouses }: ProfileFormProps) {
                 required
               />
             </div>
+          </div>
+
+          <div>
+            <Label htmlFor="warehouseAddress">
+              Адрес склада компании
+            </Label>
+            <Input
+              id="warehouseAddress"
+              name="warehouseAddress"
+              defaultValue={client.warehouseAddress || ''}
+              placeholder="Укажите полный адрес вашего склада (страна, город, улица, номер здания/склада)"
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              Основной адрес для забора груза водителями при оформлении поставок
+            </p>
           </div>
 
           <div>

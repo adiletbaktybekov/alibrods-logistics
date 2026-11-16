@@ -45,6 +45,7 @@ describe('STEP 7.9.1: Seller Registration Password Validation', () => {
       contactPerson: 'Акылбеков Б.',
       phone: '+79551234567',
       email: 'seller@example.com',
+      warehouseAddress: 'г. Бишкек, ул. Киевская, 10',
     };
 
     it('fails Zod parse when password is 7 characters', () => {

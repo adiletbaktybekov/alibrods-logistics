@@ -953,3 +953,61 @@ export async function updateUserRoleAction(targetUserId: string, newRole: UserRo
   revalidatePath('/admin');
   return { success: true, data: updated };
 }
+
+export async function requireAdminUser() {
+  const user = await requireStaffUser();
+  if (!['SUPER_ADMIN', 'ADMIN'].includes(user.role)) {
+    throw new ForbiddenError('Действие доступно только администраторам (ADMIN / SUPER_ADMIN)');
+  }
+  return user;
+}
+
+export async function deleteClientAction(clientId: string) {
+  try {
+    const actor = await requireAdminUser();
+    const result = await ClientsService.deleteClient(clientId, actor.id);
+    revalidatePath('/admin/clients');
+    revalidatePath(`/admin/clients/${clientId}`);
+    revalidatePath('/admin/orders');
+    return { success: true, message: result.message };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Не удалось удалить клиента',
+    };
+  }
+}
+
+export async function deleteDriverAction(driverId: string) {
+  try {
+    const actor = await requireAdminUser();
+    const result = await DriversService.deleteDriver(driverId, actor.id);
+    revalidatePath('/admin/drivers');
+    revalidatePath('/admin/orders');
+    return { success: true, message: result.message };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Не удалось удалить водителя',
+    };
+  }
+}
+
+export async function updateClientAdminAction(
+  clientId: string,
+  data: { warehouseAddress?: string; notes?: string }
+) {
+  try {
+    await requireStaffUser();
+    const updated = await ClientsService.updateByAdmin(clientId, data);
+    revalidatePath('/admin/clients');
+    revalidatePath(`/admin/clients/${clientId}`);
+    return { success: true, data: updated };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Не удалось обновить данные клиента',
+    };
+  }
+}
+

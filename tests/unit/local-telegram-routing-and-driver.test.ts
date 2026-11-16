@@ -304,7 +304,7 @@ describe('Local Telegram Notification & Driver Dispatch Verification', () => {
       expect(capturedBody.text).toContain('AB-2026-DRV-4');
       expect(capturedBody.text).toContain('Электросталь');
       expect(capturedBody.text).not.toContain('Wildberries');
-      expect(capturedBody.text).toContain('3 палл. (30 кор.)');
+      expect(capturedBody.text).toContain('3 палл., 30 кор.');
       expect(capturedBody.text).toContain('Олег Отгрузчик');
       expect(capturedBody.text).toContain('+79998887766');
       expect(capturedBody.text).toContain('Хрупкий груз');

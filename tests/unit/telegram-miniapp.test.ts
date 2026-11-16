@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import crypto from 'crypto';
 import { validateTelegramInitData } from '@/lib/security/telegram';
 import { verifyMiniAppDataAction } from '@/app/actions/miniapp-auth';

@@ -278,14 +278,14 @@ export class TelegramBotService {
           ];
 
           for (const ord of activeOrders) {
-            const statusLabel = STATUS_LABELS[ord.status] || ord.status;
             const cargo =
               ord.totalPalletsCount > 0
-                ? `${ord.totalBoxesCount} кор., ${ord.totalPalletsCount} палл.`
+                ? `${ord.totalPalletsCount} палл., ${ord.totalBoxesCount} кор.`
                 : `${ord.totalBoxesCount} кор.`;
             const whName = ord.destinations && ord.destinations.length > 0
               ? ord.destinations.map((d) => d.isCustomWarehouse ? (d.customWarehouseName || 'Инд. склад') : (d.warehouse?.name || 'Склад')).join(', ')
               : (ord.warehouse?.name || '—');
+            const statusLabel = STATUS_LABELS[ord.status] || ord.status;
             lines.push(
               `• <code>#${ord.orderNumber}</code> → <b>${whName}</b>\n  Статус: <b>${statusLabel}</b> (${cargo})\n`
             );
@@ -648,6 +648,10 @@ export class TelegramBotService {
           where: { id: orderId },
           include: {
             warehouse: true,
+            destinations: {
+              include: { warehouse: true },
+              orderBy: { createdAt: 'asc' },
+            },
             client: {
               include: {
                 user: {
@@ -787,10 +791,22 @@ export class TelegramBotService {
 
       // 6c. Dispatch ORDER_CONFIRMED to the shipping group
       try {
+        const destinationsPayload = (processedOrder.destinations || []).map((d: any) => ({
+          warehouseName: d.isCustomWarehouse
+            ? (d.customWarehouseName?.trim() || 'Индивидуальный склад')
+            : (d.warehouse?.name || 'Склад'),
+          deliveryDate: d.deliveryDate,
+          palletsCount: d.palletsCount || 0,
+          boxesCount: d.boxesCount || 0,
+          isCustomWarehouse: d.isCustomWarehouse,
+          comment: d.comment,
+        }));
+
         const groupRes = await TelegramNotificationService.notifyGroupEvent('ORDER_CONFIRMED', {
           orderId: processedOrder.id,
           orderNumber: processedOrder.orderNumber,
           warehouseName: processedOrder.warehouse?.name || 'Склад',
+          destinations: destinationsPayload,
           scheduledPickupAt: processedOrder.scheduledPickupAt,
           totalBoxesCount: processedOrder.totalBoxesCount,
           totalPalletsCount: processedOrder.totalPalletsCount,
@@ -1082,40 +1098,53 @@ export class TelegramBotService {
 
       const cargoStr =
         order.totalPalletsCount > 0
-          ? `${order.totalPalletsCount} палл. (${order.totalBoxesCount} кор.)`
+          ? `${order.totalPalletsCount} палл., ${order.totalBoxesCount} кор.`
           : `${order.totalBoxesCount} кор.`;
 
-      let warehouseDisplay = '';
-      if (order.destinations && order.destinations.length > 0) {
-        const destLines = order.destinations.map((d: any) => {
-          const whName = d.isCustomWarehouse
-            ? `[Инд.] ${d.customWarehouseName?.trim() || 'Индивидуальный склад'}`
-            : d.warehouse?.name || 'Склад';
-          const cargo =
-            d.palletsCount > 0
-              ? `${d.boxesCount} кор., ${d.palletsCount} палл.`
-              : `${d.boxesCount} кор.`;
-          const dDate = d.deliveryDate ? new Date(d.deliveryDate).toLocaleDateString('ru-RU') : '';
-          return `  • ${whName}: <b>${cargo}</b>${dDate ? ` (${dDate})` : ''}`;
-        });
-        warehouseDisplay = `🏢 <b>Склады назначения:</b>\n${destLines.join('\n')}`;
-      } else {
-        warehouseDisplay = `🏢 <b>Склад:</b> ${order.warehouse?.name || 'Склад'}`;
+      const hasDestinations = order.destinations && order.destinations.length > 0;
+      let warehouseBlock = '';
+
+      if (hasDestinations) {
+        const destPayload = order.destinations.map((d: any) => ({
+          warehouseName: d.isCustomWarehouse
+            ? (d.customWarehouseName?.trim() || 'Индивидуальный склад')
+            : (d.warehouse?.name || 'Склад'),
+          deliveryDate: d.deliveryDate,
+          palletsCount: d.palletsCount || 0,
+          boxesCount: d.boxesCount || 0,
+          isCustomWarehouse: d.isCustomWarehouse,
+          comment: d.comment,
+        }));
+        warehouseBlock = TelegramNotificationService.formatTelegramDestinations(
+          destPayload,
+          order.totalPalletsCount,
+          order.totalBoxesCount
+        );
       }
 
-      const lines = [
+      const lines: string[] = [
         `📦 <b>Заявка:</b> <code>#${order.orderNumber}</code>`,
-        warehouseDisplay,
         `🏢 <b>Клиент:</b> ${order.client.companyName}`,
         order.client.contactPhone ? `📞 <b>Телефон:</b> <code>${order.client.contactPhone}</code>` : '',
-        `📅 <b>Дата:</b> ${deliveryDateStr}`,
-        `📦 <b>Общий объём:</b> ${cargoStr}`,
+      ];
+
+      if (hasDestinations) {
+        lines.push('', warehouseBlock);
+      } else {
+        lines.push(
+          `🏢 <b>Склад:</b> ${order.warehouse?.name || 'Склад'}`,
+          `📅 <b>Дата:</b> ${deliveryDateStr}`,
+          `📦 <b>Общий объём:</b> ${cargoStr}`
+        );
+      }
+
+      lines.push(
         order.pickupAddress
           ? `📍 <b>Адрес:</b> ${order.pickupCity ? `${order.pickupCity}, ` : ''}${order.pickupAddress}`
           : '',
         assignment?.notes ? `💬 <b>Инструкция менеджера:</b> <i>${assignment.notes}</i>` : '',
-        `📌 <b>Текущий статус:</b> <b>${STATUS_LABELS[order.status] || order.status}</b>`,
-      ].filter(Boolean);
+        `📌 <b>Текущий статус:</b> <b>${STATUS_LABELS[order.status] || order.status}</b>`
+      );
 
       const buttons: Array<Array<{ text: string; callback_data: string }>> = [];
 

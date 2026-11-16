@@ -10,6 +10,7 @@ export const updateClientProfileSchema = z.object({
   contactPerson: z.string().min(2).optional(),
   contactPhone: optionalPhoneSchema,
   contactEmail: z.string().email().optional().or(z.literal('')).nullable(),
+  warehouseAddress: z.string().optional().or(z.literal('')).nullable(),
   defaultWarehouseId: z.string().uuid().optional().or(z.literal('')).nullable(),
   notes: z.string().optional().nullable(),
 });

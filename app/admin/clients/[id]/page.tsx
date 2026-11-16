@@ -10,6 +10,8 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { formatDateTime } from '@/lib/utils';
 import { formatPhoneNumber } from '@/lib/phone';
 import { isExpectedAuthError } from '@/lib/errors';
+import { ClientDeleteButton } from '../client-delete-button';
+import { ClientWarehouseAddressCard } from './client-warehouse-address-card';
 
 export const dynamic = 'force-dynamic';
 
@@ -56,12 +58,20 @@ export default async function AdminClientDetailPage({ params }: AdminClientDetai
             </p>
           </div>
 
-          <div>
+          <div className="flex items-center gap-2">
             <Link href="/admin/clients">
               <Button variant="outline" size="sm">
                 ← Назад к списку клиентов
               </Button>
             </Link>
+            <ClientDeleteButton
+              clientId={client.id}
+              companyName={client.companyName}
+              contactPerson={client.contactPerson}
+              contactPhone={client.contactPhone || client.user?.phone}
+              ordersCount={client.orders?.length || 0}
+              redirectTo="/admin/clients"
+            />
           </div>
         </div>
       </div>
@@ -129,6 +139,11 @@ export default async function AdminClientDetailPage({ params }: AdminClientDetai
                 </div>
               )}
 
+              <ClientWarehouseAddressCard
+                clientId={client.id}
+                initialAddress={client.warehouseAddress}
+              />
+
               {client.notes && (
                 <div className="border-t border-slate-100 pt-3">
                   <span className="text-slate-500 block">Заметки о клиенте:</span>
@@ -188,13 +203,21 @@ export default async function AdminClientDetailPage({ params }: AdminClientDetai
                           </div>
                         </TableCell>
                         <TableCell className="text-xs">
-                          {order.totalPalletsCount > 0 ? (
-                            <span className="font-semibold text-indigo-700">
-                              {order.totalPalletsCount} палл.
-                            </span>
-                          ) : (
-                            <span>{order.totalBoxesCount} кор.</span>
-                          )}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {order.totalPalletsCount > 0 && (
+                              <span className="font-semibold text-indigo-700">
+                                {order.totalPalletsCount} палл.
+                              </span>
+                            )}
+                            {order.totalBoxesCount > 0 && (
+                              <span className="text-slate-700">
+                                {order.totalBoxesCount} кор.
+                              </span>
+                            )}
+                            {order.totalPalletsCount === 0 && order.totalBoxesCount === 0 && (
+                              <span className="text-slate-400">—</span>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <StatusBadge status={order.status} />

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { DriverModal } from './driver-modal';
 import { DriverCodeButton } from './driver-code-button';
+import { DriverDeleteButton } from './driver-delete-button';
 import { buildDriversPaginationUrl, calculateDisplayRange } from '@/lib/pagination';
 import { formatPhoneNumber } from '@/lib/phone';
 import { PaginatedDriversResult } from '@/modules/drivers/drivers.service';
@@ -237,11 +238,19 @@ export default async function AdminDriversPage({ searchParams }: AdminDriversPag
                           {driver.notes || '—'}
                         </TableCell>
                         <TableCell className="text-right">
-                          <DriverCodeButton
-                            driverId={driver.id}
-                            driverName={driver.fullName}
-                            hasTelegram={Boolean(tg)}
-                          />
+                          <div className="flex items-center justify-end gap-1.5">
+                            <DriverCodeButton
+                              driverId={driver.id}
+                              driverName={driver.fullName}
+                              hasTelegram={Boolean(tg)}
+                            />
+                            <DriverDeleteButton
+                              driverId={driver.id}
+                              driverName={driver.fullName}
+                              driverPhone={driver.user?.phone}
+                              assignmentsCount={assignmentsCount}
+                            />
+                          </div>
                         </TableCell>
                       </TableRow>
                     );

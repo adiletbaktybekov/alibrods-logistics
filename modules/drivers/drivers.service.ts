@@ -1,5 +1,5 @@
 import { prisma } from '@/database/prisma';
-import { NotFoundError, ConflictError } from '@/lib/errors';
+import { NotFoundError, ConflictError, ForbiddenError } from '@/lib/errors';
 import { Prisma, UserRole, AuditAction } from '@prisma/client';
 import { AuditService } from '@/modules/audit/audit.service';
 import { CreateDriverProfileDto, RegisterDriverDto } from './drivers.dto';
@@ -233,4 +233,150 @@ export class DriversService {
       data: { isAvailable },
     });
   }
+
+  public static async deleteDriver(
+    driverProfileId: string,
+    performedByUserId: string,
+    ipAddress?: string
+  ): Promise<{ success: boolean; message: string }> {
+    if (!process.env.DATABASE_URL) throw new Error('Database not configured');
+
+    const driver = await prisma.driverProfile.findUnique({
+      where: { id: driverProfileId },
+      include: {
+        user: {
+          include: {
+            telegramAccount: true,
+          },
+        },
+        assignments: {
+          include: {
+            order: {
+              select: {
+                id: true,
+                orderNumber: true,
+                status: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!driver) {
+      throw new NotFoundError('DriverProfile', driverProfileId);
+    }
+
+    if (driver.user.role === UserRole.SUPER_ADMIN) {
+      throw new ForbiddenError('Удаление супер-администратора строго запрещено');
+    }
+
+    if (driver.userId === performedByUserId) {
+      throw new ForbiddenError('Нельзя удалить свой собственный аккаунт');
+    }
+
+    // 1. Check for active assignments
+    const activeAssignments = driver.assignments.filter(
+      (a) =>
+        ['ASSIGNED', 'ACCEPTED', 'IN_PROGRESS'].includes(a.status) &&
+        !['COMPLETED', 'CANCELLED', 'REJECTED_BY_MANAGER'].includes(a.order.status)
+    );
+
+    if (activeAssignments.length > 0) {
+      const activeOrderNumbers = activeAssignments
+        .map((a) => `#${a.order.orderNumber}`)
+        .slice(0, 5)
+        .join(', ');
+      throw new ConflictError(
+        `Невозможно удалить водителя: найдено ${activeAssignments.length} активных назначений на заказы (${activeOrderNumbers}). Завершите или снимите назначения перед удалением.`
+      );
+    }
+
+    const totalAssignmentsCount = driver.assignments.length;
+    const driverPhone = driver.user.phone || '';
+    const driverName = driver.fullName;
+
+    if (totalAssignmentsCount === 0) {
+      // Clean delete: 0 assignments
+      await prisma.$transaction(async (tx) => {
+        await tx.telegramPairingCode.deleteMany({ where: { userId: driver.userId } });
+        await tx.telegramAccount.deleteMany({ where: { userId: driver.userId } });
+        if ('driverPhotoSession' in (tx as any)) {
+          await (tx as any).driverPhotoSession.deleteMany({ where: { driverProfileId: driver.id } });
+        }
+        await tx.driverProfile.delete({ where: { id: driver.id } });
+        await tx.user.delete({ where: { id: driver.userId } });
+      });
+
+      await AuditService.log({
+        userId: performedByUserId,
+        action: AuditAction.DELETE,
+        resource: 'DriverProfile',
+        resourceId: driver.id,
+        ipAddress,
+        metadata: {
+          driverName,
+          phone: driverPhone,
+          mode: 'HARD_DELETE_ZERO_ASSIGNMENTS',
+        },
+      });
+
+      return {
+        success: true,
+        message: `Водитель «${driverName}» успешно и полностью удалён.`,
+      };
+    } else {
+      // Safe archival delete: has historical assignments
+      const archivedPhone = `del_${Date.now()}_${driver.user.phone || driver.id}`;
+      const archivedEmail = driver.user.email ? `del_${Date.now()}_${driver.user.email}` : null;
+
+      await prisma.$transaction(async (tx) => {
+        await tx.telegramPairingCode.deleteMany({ where: { userId: driver.userId } });
+        await tx.telegramAccount.deleteMany({ where: { userId: driver.userId } });
+        if ('driverPhotoSession' in (tx as any)) {
+          await (tx as any).driverPhotoSession.deleteMany({ where: { driverProfileId: driver.id } });
+        }
+
+        await tx.driverProfile.update({
+          where: { id: driver.id },
+          data: {
+            fullName: driverName.includes('[Удалён]') ? driverName : `${driverName} [Удалён]`,
+            isAvailable: false,
+            notes: `${driver.notes ? `${driver.notes} | ` : ''}Аккаунт удалён администратором ${new Date().toISOString()}`,
+          },
+        });
+
+        await tx.user.update({
+          where: { id: driver.userId },
+          data: {
+            isActive: false,
+            passwordHash: null,
+            phone: archivedPhone,
+            email: archivedEmail,
+            tokenVersion: { increment: 10 },
+          },
+        });
+      });
+
+      await AuditService.log({
+        userId: performedByUserId,
+        action: AuditAction.DELETE,
+        resource: 'DriverProfile',
+        resourceId: driver.id,
+        ipAddress,
+        metadata: {
+          driverName,
+          phone: driverPhone,
+          mode: 'SAFE_ARCHIVE_WITH_HISTORY',
+          historicalAssignmentsCount: totalAssignmentsCount,
+        },
+      });
+
+      return {
+        success: true,
+        message: `Аккаунт водителя «${driverName}» удалён, сессия отозвана, Telegram отвязан. История ${totalAssignmentsCount} завершённых доставок сохранена в архиве.`,
+      };
+    }
+  }
 }
+

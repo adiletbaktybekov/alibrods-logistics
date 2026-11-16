@@ -119,7 +119,9 @@ export default async function MiniAppDashboardPage() {
                         )}
                       </div>
                       <div className="text-[11px] text-slate-400">
-                        {order.totalPalletsCount > 0 ? `${order.totalPalletsCount} палл.` : `${order.totalBoxesCount} кор.`}
+                        {order.totalPalletsCount > 0
+                          ? `${order.totalPalletsCount} палл.${order.totalBoxesCount > 0 ? ` / ${order.totalBoxesCount} кор.` : ''}`
+                          : `${order.totalBoxesCount} кор.`}
                       </div>
                     </div>
                   </Link>

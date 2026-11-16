@@ -38,6 +38,25 @@ export default async function DashboardPage() {
         </div>
       </div>
 
+      {profile?.client && !profile.client.warehouseAddress && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <span className="text-xl">⚠️</span>
+            <div>
+              <p className="text-xs font-bold text-amber-900">Адрес склада не указан</p>
+              <p className="text-xs text-amber-800 mt-0.5">
+                Пожалуйста, укажите адрес вашего склада в профиле, чтобы водители могли оперативно забирать ваши грузы.
+              </p>
+            </div>
+          </div>
+          <Link href="/profile">
+            <Button variant="outline" size="sm" className="border-amber-300 bg-white text-amber-900 hover:bg-amber-100 whitespace-nowrap">
+              Заполнить адрес →
+            </Button>
+          </Link>
+        </div>
+      )}
+
       {/* KPI Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
         <Card className="border-slate-200 shadow-sm">
@@ -115,7 +134,9 @@ export default async function DashboardPage() {
                       {formatDateTime(order.createdAt)}
                     </TableCell>
                     <TableCell className="text-slate-700">
-                      {order.totalBoxesCount} кор. {order.totalPalletsCount ? `/ ${order.totalPalletsCount} палл.` : ''}
+                      {order.totalPalletsCount > 0
+                        ? `${order.totalPalletsCount} палл. / ${order.totalBoxesCount} кор.`
+                        : `${order.totalBoxesCount} кор.`}
                     </TableCell>
                     <TableCell>
                       <StatusBadge status={order.status} />

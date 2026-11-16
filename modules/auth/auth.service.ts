@@ -108,6 +108,7 @@ export class AuthService {
             contactPhone: normalizedPhone,
             contactEmail: dto.email || null,
             inn: dto.inn || null,
+            warehouseAddress: dto.warehouseAddress,
           },
         },
       },

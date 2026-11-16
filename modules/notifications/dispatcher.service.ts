@@ -79,7 +79,7 @@ export class NotificationDispatcherService {
           : 'не указана';
         const cargoStr =
           order.totalPalletsCount > 0
-            ? `${order.totalPalletsCount} палл. (${order.totalBoxesCount} кор.)`
+            ? `${order.totalPalletsCount} палл., ${order.totalBoxesCount} кор.`
             : `${order.totalBoxesCount} кор.`;
 
         const clientMsg = [
@@ -112,11 +112,23 @@ export class NotificationDispatcherService {
           ? `Дата вне стандартного графика склада (${confirmedWh.scheduleDescription}). Требуется подтверждение логиста.`
           : null;
 
+      const destinationsPayload = (order.destinations || []).map((d) => ({
+        warehouseName: d.isCustomWarehouse
+          ? (d.customWarehouseName?.trim() || 'Индивидуальный склад')
+          : (d.warehouse?.name || 'Склад'),
+        deliveryDate: d.deliveryDate,
+        palletsCount: d.palletsCount || 0,
+        boxesCount: d.boxesCount || 0,
+        isCustomWarehouse: d.isCustomWarehouse,
+        comment: d.comment,
+      }));
+
       const res = await TelegramNotificationService.notifyManagersOrderPendingApproval({
         orderId: order.id,
         orderNumber: order.orderNumber,
         marketplace: order.marketplace,
         warehouseName: getOrderWarehouseName(order),
+        destinations: destinationsPayload,
         scheduledPickupAt: order.scheduledPickupAt,
         totalBoxesCount: order.totalBoxesCount,
         totalPalletsCount: order.totalPalletsCount,
@@ -170,28 +182,22 @@ export class NotificationDispatcherService {
 
       if (!order) return false;
 
-      const destinationsSummary =
-        order.destinations && order.destinations.length > 0
-          ? order.destinations
-              .map((d) => {
-                const whName = d.isCustomWarehouse
-                  ? `[Инд.] ${d.customWarehouseName?.trim() || 'Индивидуальный склад'}`
-                  : d.warehouse?.name || 'Склад';
-                const dDate = d.deliveryDate ? new Date(d.deliveryDate).toLocaleDateString('ru-RU') : '';
-                const cargo =
-                  d.palletsCount > 0
-                    ? `${d.boxesCount} коробок, ${d.palletsCount} паллеты`
-                    : `${d.boxesCount} коробок`;
-                return `${whName} — ${cargo}${dDate ? ` (${dDate})` : ''}`;
-              })
-              .join('\n')
-          : undefined;
+      const destinationsPayload = (order.destinations || []).map((d) => ({
+        warehouseName: d.isCustomWarehouse
+          ? (d.customWarehouseName?.trim() || 'Индивидуальный склад')
+          : (d.warehouse?.name || 'Склад'),
+        deliveryDate: d.deliveryDate,
+        palletsCount: d.palletsCount || 0,
+        boxesCount: d.boxesCount || 0,
+        isCustomWarehouse: d.isCustomWarehouse,
+        comment: d.comment,
+      }));
 
       await TelegramNotificationService.notifyGroupEvent('ORDER_CONFIRMED', {
         orderId: order.id,
         orderNumber: order.orderNumber,
         warehouseName: order.warehouse?.name || 'Склад',
-        destinationsSummary,
+        destinations: destinationsPayload,
         scheduledPickupAt: order.scheduledPickupAt,
         totalBoxesCount: order.totalBoxesCount,
         totalPalletsCount: order.totalPalletsCount,
@@ -296,7 +302,7 @@ export class NotificationDispatcherService {
         type: NotificationType.DRIVER_ASSIGNED,
         channel: NotificationChannel.TELEGRAM,
         title: `Назначен рейс: ${order.orderNumber}`,
-        body: `Склад: ${getOrderWarehouseName(order)}. Груз: ${order.totalBoxesCount} кор., ${order.totalPalletsCount} палл.`,
+        body: `Склад: ${getOrderWarehouseName(order)}. Груз: ${order.totalPalletsCount} палл., ${order.totalBoxesCount} кор.`,
         payload: { orderId, orderNumber: order.orderNumber },
       }).catch((e) => logger.warn({ err: e }, 'Could not record driver notification in DB'));
 
@@ -360,24 +366,62 @@ export class NotificationDispatcherService {
         ? new Date(order.scheduledPickupAt).toLocaleDateString('ru-RU')
         : 'не указана';
 
+      const destinationsPayload = (order.destinations || []).map((d) => ({
+        warehouseName: d.isCustomWarehouse
+          ? (d.customWarehouseName?.trim() || 'Индивидуальный склад')
+          : (d.warehouse?.name || 'Склад'),
+        deliveryDate: d.deliveryDate,
+        palletsCount: d.palletsCount || 0,
+        boxesCount: d.boxesCount || 0,
+        isCustomWarehouse: d.isCustomWarehouse,
+        comment: d.comment,
+      }));
+
+      const destinationsBlock =
+        destinationsPayload.length > 0
+          ? TelegramNotificationService.formatTelegramDestinations(
+              destinationsPayload,
+              order.totalPalletsCount,
+              order.totalBoxesCount
+            )
+          : null;
+
       const cargoStr =
         order.totalPalletsCount > 0
-          ? `${order.totalPalletsCount} палл. (${order.totalBoxesCount} кор.)`
+          ? `${order.totalPalletsCount} палл., ${order.totalBoxesCount} кор.`
           : `${order.totalBoxesCount} кор.`;
 
-      const text = [
+      const textLines: string[] = [
         `🚛 <b>Вам назначен новый рейс!</b>`,
         ``,
-        `📦 <b>Заявка:</b> <code>${order.orderNumber}</code>`,
-        `🏢 <b>Склад:</b> ${getOrderWarehouseName(order)}`,
-        `📅 <b>Дата:</b> ${pickupDateStr}`,
-        `📦 <b>Груз:</b> ${cargoStr}`,
-        `📍 <b>Адрес забора:</b> ${order.pickupCity ? `${order.pickupCity}, ` : ''}${order.pickupAddress}`,
-        order.pickupContactName ? `👤 <b>Контакт:</b> ${order.pickupContactName} (${order.pickupContactPhone || ''})` : '',
-        order.clientComment ? `💬 <b>Заметка селлера:</b> <i>${order.clientComment}</i>` : '',
-      ]
-        .filter(Boolean)
-        .join('\n');
+        `📦 <b>Заявка:</b> <code>#${order.orderNumber}</code>`,
+      ];
+
+      if (destinationsBlock) {
+        textLines.push(destinationsBlock);
+      } else {
+        textLines.push(
+          `🏢 <b>Склад:</b> ${getOrderWarehouseName(order)}`,
+          `📅 <b>Дата:</b> ${pickupDateStr}`,
+          `📦 <b>Груз:</b> ${cargoStr}`
+        );
+      }
+
+      textLines.push(
+        ``,
+        `📍 <b>Адрес забора:</b> ${order.pickupCity ? `${order.pickupCity}, ` : ''}${order.pickupAddress}`
+      );
+
+      if (order.pickupContactName) {
+        textLines.push(
+          `👤 <b>Контакт:</b> ${order.pickupContactName}${order.pickupContactPhone ? ` (${order.pickupContactPhone})` : ''}`
+        );
+      }
+      if (order.clientComment) {
+        textLines.push(`💬 <b>Заметка селлера:</b> <i>${order.clientComment}</i>`);
+      }
+
+      const text = textLines.filter(Boolean).join('\n');
 
       const replyMarkup = {
         inline_keyboard: [

@@ -211,20 +211,6 @@ export function WarehouseStatsClient({ initialStats, warehousesCatalog }: StatsC
         <Card className="border-slate-200 shadow-sm bg-white">
           <CardContent className="p-4">
             <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider block">
-              Всего коробок
-            </span>
-            <div className="text-2xl font-bold font-mono text-indigo-600 mt-1">
-              {kpi.totalBoxes.toLocaleString()}
-            </div>
-            <span className="text-[10px] text-slate-400 mt-0.5 block">
-              Коробок отгружено
-            </span>
-          </CardContent>
-        </Card>
-
-        <Card className="border-slate-200 shadow-sm bg-white">
-          <CardContent className="p-4">
-            <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider block">
               Всего паллет
             </span>
             <div className="text-2xl font-bold font-mono text-brand-600 mt-1">
@@ -232,6 +218,20 @@ export function WarehouseStatsClient({ initialStats, warehousesCatalog }: StatsC
             </div>
             <span className="text-[10px] text-slate-400 mt-0.5 block">
               Паллет отгружено
+            </span>
+          </CardContent>
+        </Card>
+
+        <Card className="border-slate-200 shadow-sm bg-white">
+          <CardContent className="p-4">
+            <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider block">
+              Всего коробок
+            </span>
+            <div className="text-2xl font-bold font-mono text-indigo-600 mt-1">
+              {kpi.totalBoxes.toLocaleString()}
+            </div>
+            <span className="text-[10px] text-slate-400 mt-0.5 block">
+              Коробок отгружено
             </span>
           </CardContent>
         </Card>
@@ -308,7 +308,7 @@ export function WarehouseStatsClient({ initialStats, warehousesCatalog }: StatsC
               <div className="flex justify-between items-center text-[11px] text-slate-600 mt-2">
                 <span>Заявок: {marketplaceBreakdown.wb.orders}</span>
                 <span>
-                  {marketplaceBreakdown.wb.boxes} кор. • {marketplaceBreakdown.wb.pallets} палл.
+                  {marketplaceBreakdown.wb.pallets} палл. • {marketplaceBreakdown.wb.boxes} кор.
                 </span>
               </div>
             </div>
@@ -333,7 +333,7 @@ export function WarehouseStatsClient({ initialStats, warehousesCatalog }: StatsC
               <div className="flex justify-between items-center text-[11px] text-slate-600 mt-2">
                 <span>Заявок: {marketplaceBreakdown.ozon.orders}</span>
                 <span>
-                  {marketplaceBreakdown.ozon.boxes} кор. • {marketplaceBreakdown.ozon.pallets} палл.
+                  {marketplaceBreakdown.ozon.pallets} палл. • {marketplaceBreakdown.ozon.boxes} кор.
                 </span>
               </div>
             </div>
@@ -359,8 +359,8 @@ export function WarehouseStatsClient({ initialStats, warehousesCatalog }: StatsC
                 <th className="py-2.5 px-3 font-semibold">Склад / Направление</th>
                 <th className="py-2.5 px-3 font-semibold">Город</th>
                 <th className="py-2.5 px-3 font-semibold text-right">Заявок</th>
-                <th className="py-2.5 px-3 font-semibold text-right">Коробок</th>
                 <th className="py-2.5 px-3 font-semibold text-right">Паллет</th>
+                <th className="py-2.5 px-3 font-semibold text-right">Коробок</th>
                 <th className="py-2.5 px-4 font-semibold w-40">Доля по коробкам</th>
               </tr>
             </thead>
@@ -397,11 +397,11 @@ export function WarehouseStatsClient({ initialStats, warehousesCatalog }: StatsC
                     <td className="py-3 px-3 text-right font-mono font-medium text-slate-800">
                       {w.ordersCount}
                     </td>
-                    <td className="py-3 px-3 text-right font-mono font-bold text-indigo-600">
-                      {w.boxesCount.toLocaleString()}
-                    </td>
                     <td className="py-3 px-3 text-right font-mono font-bold text-brand-600">
                       {w.palletsCount.toLocaleString()}
+                    </td>
+                    <td className="py-3 px-3 text-right font-mono font-bold text-indigo-600">
+                      {w.boxesCount.toLocaleString()}
                     </td>
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-2">
@@ -443,14 +443,14 @@ export function WarehouseStatsClient({ initialStats, warehousesCatalog }: StatsC
                   <span className="text-sm font-bold text-slate-900 block mt-0.5">
                     {point.ordersCount} <span className="text-[10px] font-normal text-slate-500">заяв.</span>
                   </span>
-                  <div className="mt-1 text-[10px] text-indigo-600 font-mono">
-                    {point.boxesCount} кор.
-                  </div>
                   {point.palletsCount > 0 && (
-                    <div className="text-[10px] text-brand-600 font-mono">
+                    <div className="mt-1 text-[10px] text-brand-600 font-mono">
                       {point.palletsCount} палл.
                     </div>
                   )}
+                  <div className={`${point.palletsCount > 0 ? '' : 'mt-1'} text-[10px] text-indigo-600 font-mono`}>
+                    {point.boxesCount} кор.
+                  </div>
                 </div>
               ))}
             </div>

@@ -69,6 +69,7 @@ export async function getCurrentClientProfile() {
         contactPerson: user.phone || user.email || 'Клиент',
         contactPhone: user.phone || '',
         contactEmail: user.email || '',
+        warehouseAddress: null as string | null,
         inn: null,
       },
     };
@@ -114,6 +115,7 @@ export async function loginAction(prevState: unknown, formData: FormData) {
 export async function registerAction(prevState: unknown, formData: FormData) {
   const companyName = formData.get('companyName')?.toString() || '';
   const contactPerson = formData.get('contactPerson')?.toString() || '';
+  const warehouseAddress = formData.get('warehouseAddress')?.toString() || '';
   const phone = formData.get('phone')?.toString() || '';
   const email = formData.get('email')?.toString() || undefined;
   const inn = formData.get('inn')?.toString() || undefined;
@@ -131,6 +133,7 @@ export async function registerAction(prevState: unknown, formData: FormData) {
   const parsed = registerClientSchema.safeParse({
     companyName,
     contactPerson,
+    warehouseAddress,
     phone,
     email: email || undefined,
     inn: inn || undefined,

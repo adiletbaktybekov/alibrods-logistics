@@ -125,7 +125,7 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
                     <div className="text-xs text-slate-500">{order.warehouse?.marketplace || order.marketplace}</div>
                   </TableCell>
                   <TableCell className="text-slate-700 text-sm">
-                    {order.totalBoxesCount} кор. {order.totalPalletsCount ? `/ ${order.totalPalletsCount} палл.` : ''}
+                    {order.totalPalletsCount ? `${order.totalPalletsCount} палл. / ` : ''}{order.totalBoxesCount} кор.
                   </TableCell>
                   <TableCell>
                     <StatusBadge status={order.status} />

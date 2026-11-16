@@ -184,7 +184,7 @@ describe('Telegram 3-Bot Architecture & Shared Group Notification Service', () =
       // Clean Start Requirement 1: no marketplace names in Telegram
       expect(msg).not.toContain(payload.marketplace);
       expect(msg).toContain(payload.warehouseName);
-      expect(msg).toContain('15 кор., 2 палл.');
+      expect(msg).toContain('2 палл., 15 кор.');
       expect(msg).toContain('Статус:');
 
       // Security check: must NEVER contain passwords, tokens, personal phone numbers, or delivery costs

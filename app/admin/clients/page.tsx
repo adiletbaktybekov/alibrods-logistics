@@ -10,6 +10,7 @@ import { formatPhoneNumber } from '@/lib/phone';
 import { buildClientsPaginationUrl, calculateDisplayRange } from '@/lib/pagination';
 import { PaginatedClientsResult } from '@/modules/clients/clients.service';
 import { isExpectedAuthError } from '@/lib/errors';
+import { ClientDeleteButton } from './client-delete-button';
 
 export const dynamic = 'force-dynamic';
 
@@ -136,6 +137,11 @@ export default async function AdminClientsPage({ searchParams }: AdminClientsPag
                               {client.legalName}
                             </div>
                           )}
+                          {client.warehouseAddress && (
+                            <div className="text-[10px] text-slate-500 font-normal truncate max-w-xs mt-0.5" title={client.warehouseAddress}>
+                              📍 {client.warehouseAddress}
+                            </div>
+                          )}
                         </TableCell>
                         <TableCell className="font-mono text-xs text-slate-700">
                           {client.inn || '—'}
@@ -159,11 +165,20 @@ export default async function AdminClientsPage({ searchParams }: AdminClientsPag
                           {formatDateTime(client.createdAt)}
                         </TableCell>
                         <TableCell className="text-right">
-                          <Link href={`/admin/clients/${client.id}`}>
-                            <Button variant="outline" size="sm" className="text-xs">
-                              Профиль
-                            </Button>
-                          </Link>
+                          <div className="flex items-center justify-end gap-1.5">
+                            <Link href={`/admin/clients/${client.id}`}>
+                              <Button variant="outline" size="sm" className="text-xs">
+                                Профиль
+                              </Button>
+                            </Link>
+                            <ClientDeleteButton
+                              clientId={client.id}
+                              companyName={client.companyName}
+                              contactPerson={client.contactPerson}
+                              contactPhone={client.contactPhone || client.user?.phone}
+                              ordersCount={ordersCount}
+                            />
+                          </div>
                         </TableCell>
                       </TableRow>
                     );

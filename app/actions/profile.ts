@@ -14,6 +14,7 @@ export async function updateClientProfileAction(prevState: unknown, formData: Fo
   const contactPhone = formData.get('contactPhone')?.toString();
   const contactEmail = formData.get('contactEmail')?.toString() || undefined;
   const inn = formData.get('inn')?.toString() || undefined;
+  const warehouseAddress = formData.get('warehouseAddress')?.toString() || undefined;
   const defaultWarehouseId = formData.get('defaultWarehouseId')?.toString() || undefined;
 
   const parsed = updateClientProfileSchema.safeParse({
@@ -22,6 +23,7 @@ export async function updateClientProfileAction(prevState: unknown, formData: Fo
     contactPhone,
     contactEmail: contactEmail || undefined,
     inn: inn || undefined,
+    warehouseAddress: warehouseAddress || undefined,
     defaultWarehouseId: defaultWarehouseId || undefined,
   });
 

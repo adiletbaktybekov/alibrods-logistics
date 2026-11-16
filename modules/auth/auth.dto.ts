@@ -14,6 +14,7 @@ export const registerClientSchema = z.object({
   password: z.string().min(8, 'Пароль должен содержать как минимум 8 символов'),
   companyName: z.string().min(2, 'Название компании обязательно'),
   contactPerson: z.string().min(2, 'Контактное лицо обязательно'),
+  warehouseAddress: z.string().min(5, 'Укажите полный адрес вашего склада'),
   inn: z.string().regex(/^\d{10,14}$/, 'ИНН должен содержать от 10 до 14 цифр').optional().or(z.literal('')).nullable(),
 });
 

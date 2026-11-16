@@ -5,11 +5,22 @@ import { DatabaseRateLimiter } from '@/lib/security/rate-limit';
 import { OrderStatus, UserRole } from '@prisma/client';
 import { getDayOfWeekFromDate, RUSSIAN_DAY_NAMES } from '@/modules/warehouses/warehouses.types';
 
+export interface TelegramDestinationItem {
+  warehouseName: string;
+  deliveryDate?: Date | string | null;
+  palletsCount: number;
+  boxesCount: number;
+  isCustomWarehouse?: boolean;
+  customWarehouseName?: string | null;
+  comment?: string | null;
+}
+
 export interface ManagerApprovalNotificationPayload {
   orderId: string;
   orderNumber: string;
   marketplace: string;
   warehouseName: string;
+  destinations?: TelegramDestinationItem[];
   scheduledPickupAt?: Date | string | null;
   totalBoxesCount: number;
   totalPalletsCount: number;
@@ -41,6 +52,7 @@ export interface TelegramOrderNotificationPayload {
   orderNumber: string;
   marketplace?: string;
   warehouseName: string;
+  destinations?: TelegramDestinationItem[];
   destinationsSummary?: string;
   scheduledPickupAt?: Date | string | null;
   totalBoxesCount: number;
@@ -108,14 +120,93 @@ export class TelegramNotificationService {
   }
 
   /**
-   * Formats cargo description (boxes and pallets)
+   * Formats cargo description: Pallets first, then Boxes
    */
-  public static formatCargo(boxesCount: number, palletsCount: number): string {
+  public static formatCargo(palletsCount: number, boxesCount: number): string {
+    const pallets = palletsCount && palletsCount > 0 ? `${palletsCount} палл.` : null;
     const boxes = `${boxesCount || 0} кор.`;
-    if (palletsCount && palletsCount > 0) {
-      return `${boxes}, ${palletsCount} палл.`;
+    return pallets ? `${pallets}, ${boxes}` : boxes;
+  }
+
+  /**
+   * Formats destinations list according to standard AliBros multi-warehouse template:
+   * СКЛАДЫ:
+   * • Склад Бишкек
+   *   Дата доставки: 20.11.2026
+   *   Паллеты: 3
+   *   Коробки: 15
+   * 
+   * • Склад Москва
+   *   Дата доставки: 21.11.2026
+   *   Паллеты: 2
+   *   Коробки: 10
+   * 
+   * ИТОГО:
+   * Паллеты: 5
+   * Коробки: 25
+   */
+  public static formatTelegramDestinations(
+    destinations: TelegramDestinationItem[],
+    totalPallets?: number,
+    totalBoxes?: number
+  ): string {
+    if (!destinations || destinations.length === 0) {
+      return '';
     }
-    return boxes;
+
+    const items = destinations.map((d) => {
+      let dateStr = 'не указана';
+      if (d.deliveryDate) {
+        if (typeof d.deliveryDate === 'string' && /^\d{2}\.\d{2}\.\d{4}$/.test(d.deliveryDate.trim())) {
+          dateStr = d.deliveryDate.trim();
+        } else {
+          try {
+            const dateObj = typeof d.deliveryDate === 'string' ? new Date(d.deliveryDate) : d.deliveryDate;
+            if (!isNaN(dateObj.getTime())) {
+              const day = String(dateObj.getUTCDate()).padStart(2, '0');
+              const month = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
+              const year = dateObj.getUTCFullYear();
+              dateStr = `${day}.${month}.${year}`;
+            }
+          } catch {
+            dateStr = 'не указана';
+          }
+        }
+      }
+
+      const whName = d.isCustomWarehouse
+        ? (d.customWarehouseName || d.warehouseName || 'Индивидуальный склад')
+        : (d.warehouseName || 'Склад');
+
+      const lines = [
+        `• <b>${escapeHtml(whName)}</b>`,
+        `  Дата доставки: ${dateStr}`,
+        `  Паллеты: ${d.palletsCount || 0}`,
+        `  Коробки: ${d.boxesCount || 0}`,
+      ];
+      if (d.comment && d.comment.trim()) {
+        lines.push(`  Примечание: <i>${escapeHtml(d.comment.trim())}</i>`);
+      }
+      return lines.join('\n');
+    });
+
+    const computedTotalPallets =
+      typeof totalPallets === 'number'
+        ? totalPallets
+        : destinations.reduce((sum, d) => sum + (d.palletsCount || 0), 0);
+    const computedTotalBoxes =
+      typeof totalBoxes === 'number'
+        ? totalBoxes
+        : destinations.reduce((sum, d) => sum + (d.boxesCount || 0), 0);
+
+    return [
+      'СКЛАДЫ:',
+      items.join('\n\n'),
+      '',
+      'ИТОГО:',
+      `Паллеты: ${computedTotalPallets}`,
+      `Коробки: ${computedTotalBoxes}`,
+    ].join('\n');
   }
 
   /**
@@ -141,7 +232,7 @@ export class TelegramNotificationService {
     eventType: TelegramGroupEventType,
     payload: TelegramOrderNotificationPayload
   ): string {
-    const cargo = this.formatCargo(payload.totalBoxesCount, payload.totalPalletsCount);
+    const cargo = this.formatCargo(payload.totalPalletsCount, payload.totalBoxesCount);
     const dateStr = this.formatDeliveryDate(payload.scheduledPickupAt);
 
     // Requirement 4: Tailored confirmed order card for shipping group
@@ -153,7 +244,16 @@ export class TelegramNotificationService {
         payload.clientPhone ? `Телефон: <code>${escapeHtml(payload.clientPhone)}</code>` : '',
       ].filter(Boolean);
 
-      if (payload.destinationsSummary) {
+      if (payload.destinations && payload.destinations.length > 0) {
+        lines.push(
+          '',
+          this.formatTelegramDestinations(
+            payload.destinations,
+            payload.totalPalletsCount,
+            payload.totalBoxesCount
+          )
+        );
+      } else if (payload.destinationsSummary) {
         lines.push(`Склады:\n${payload.destinationsSummary}`);
       } else {
         lines.push(`Склады:\n${payload.warehouseName || 'Склад'} — ${cargo}`);
@@ -258,13 +358,26 @@ export class TelegramNotificationService {
     const lines: string[] = [
       `<b>AliBros Logistics</b>`,
       `<b>${eventTitle}</b>`,
-      payload.destinationsSummary
-        ? `Склады назначения:\n${payload.destinationsSummary}`
-        : `Склад назначения: <b>${payload.warehouseName}</b>`,
-      `Дата доставки: ${dateStr}`,
-      `Груз: ${cargo}`,
-      `Статус: ${statusText}`,
     ];
+
+    if (payload.destinations && payload.destinations.length > 0) {
+      lines.push(
+        '',
+        this.formatTelegramDestinations(
+          payload.destinations,
+          payload.totalPalletsCount,
+          payload.totalBoxesCount
+        )
+      );
+    } else if (payload.destinationsSummary) {
+      lines.push(`Склады назначения:\n${payload.destinationsSummary}`);
+    } else {
+      lines.push(`Склад назначения: <b>${payload.warehouseName}</b>`);
+      lines.push(`Дата доставки: ${dateStr}`);
+      lines.push(`Груз: ${cargo}`);
+    }
+
+    lines.push(`Статус: ${statusText}`);
 
     if (extraLine) {
       lines.push(extraLine);
@@ -339,12 +452,31 @@ export class TelegramNotificationService {
         ``,
         `Номер заявки: <code>#${payload.orderNumber}</code>`,
         `Клиент: <b>${clientInfo}</b>`,
-        `Склад назначения: <b>${payload.warehouseName}</b>`,
-        `Дата доставки: <b>${dateDisplay}</b>`,
-        `Количество коробок: <b>${payload.totalBoxesCount} шт.</b>`,
-        `Количество паллет: <b>${payload.totalPalletsCount} шт.</b>`,
-        `Текущий статус: <b>${payload.currentStatus || 'CREATED (Ожидает подтверждения)'}</b>`,
+        `Маркетплейс: <b>${payload.marketplace}</b>`,
       ];
+
+      if (payload.destinations && payload.destinations.length > 0) {
+        messageLines.push(
+          ``,
+          this.formatTelegramDestinations(
+            payload.destinations,
+            payload.totalPalletsCount,
+            payload.totalBoxesCount
+          )
+        );
+      } else {
+        messageLines.push(
+          `Склад назначения: <b>${payload.warehouseName}</b>`,
+          `Дата доставки: <b>${dateDisplay}</b>`,
+          `Количество паллет: <b>${payload.totalPalletsCount} шт.</b>`,
+          `Количество коробок: <b>${payload.totalBoxesCount} шт.</b>`
+        );
+      }
+
+      messageLines.push(
+        ``,
+        `Текущий статус: <b>${payload.currentStatus || 'CREATED (Ожидает подтверждения)'}</b>`
+      );
 
       if (payload.clientComment) {
         messageLines.push(`Комментарий: <i>${payload.clientComment}</i>`);
