@@ -44,6 +44,13 @@ export function OrderActions({
   const [isSavingNotes, setIsSavingNotes] = React.useState(false);
   const [notesMessage, setNotesMessage] = React.useState<string | null>(null);
 
+  // Optimistic Current Status State
+  const [currentStatus, setCurrentStatus] = React.useState<OrderStatus>(status);
+
+  React.useEffect(() => {
+    setCurrentStatus(status);
+  }, [status]);
+
   // Status Actions State
   const [isConfirming, setIsConfirming] = React.useState(false);
   const [showRejectForm, setShowRejectForm] = React.useState(false);
@@ -63,9 +70,13 @@ export function OrderActions({
   const [showDriverCommentField, setShowDriverCommentField] = React.useState(false);
 
   const isFinalStatus =
-    status === OrderStatus.COMPLETED ||
-    status === OrderStatus.CANCELLED ||
-    status === OrderStatus.REJECTED_BY_MANAGER;
+    currentStatus === OrderStatus.COMPLETED ||
+    currentStatus === OrderStatus.CANCELLED ||
+    currentStatus === OrderStatus.REJECTED_BY_MANAGER;
+
+  const isPendingDecision =
+    currentStatus === OrderStatus.CREATED ||
+    currentStatus === OrderStatus.PENDING_CONFIRMATION;
 
   // Handle Driver Workflow Stage Update by Manager
   async function handleDriverStatusUpdate(targetStatus: OrderStatus) {
@@ -79,6 +90,7 @@ export function OrderActions({
         driverStatusComment.trim() || undefined
       );
       if (res.success) {
+        setCurrentStatus(targetStatus);
         setActionSuccess('Статус водительского этапа успешно обновлён менеджером');
         setDriverStatusComment('');
         setShowDriverCommentField(false);
@@ -120,6 +132,7 @@ export function OrderActions({
     try {
       const res = await confirmOrderAction(orderId, 'Заявка проверена и подтверждена менеджером');
       if (res.success) {
+        setCurrentStatus(OrderStatus.CONFIRMED);
         setActionSuccess('Заявка успешно подтверждена');
         router.refresh();
       } else {
@@ -146,6 +159,7 @@ export function OrderActions({
     try {
       const res = await rejectOrderAction(orderId, rejectReason.trim());
       if (res.success) {
+        setCurrentStatus(OrderStatus.REJECTED_BY_MANAGER);
         setActionSuccess('Заявка отклонена');
         setShowRejectForm(false);
         router.refresh();
@@ -177,6 +191,7 @@ export function OrderActions({
         assignmentNotes.trim() || undefined
       );
       if (res.success) {
+        setCurrentStatus(OrderStatus.ASSIGNED_TO_DRIVER);
         if (res.warning) {
           setActionSuccess(`Водитель назначен. ⚠️ ${res.warning}`);
         } else {
@@ -214,8 +229,8 @@ export function OrderActions({
         </div>
       )}
 
-      {/* Decision Buttons (Confirm / Reject) */}
-      {!isFinalStatus && (
+      {/* Decision Buttons (Confirm / Reject) - ONLY when status is CREATED or PENDING_CONFIRMATION */}
+      {isPendingDecision && (
         <Card className="border-slate-200 shadow-sm bg-white">
           <CardHeader className="pb-3 border-b border-slate-100">
             <CardTitle className="text-sm font-bold text-slate-900">
@@ -223,37 +238,29 @@ export function OrderActions({
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-4 space-y-4">
-            {status !== OrderStatus.CONFIRMED && (
-              <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                onClick={handleConfirm}
+                disabled={isConfirming || isRejecting}
+                variant="primary"
+                size="md"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium shadow-sm"
+              >
+                {isConfirming ? 'Подтверждение...' : '✓ Подтвердить заявку'}
+              </Button>
+
+              {!showRejectForm && (
                 <Button
-                  onClick={handleConfirm}
+                  onClick={() => setShowRejectForm(true)}
                   disabled={isConfirming || isRejecting}
-                  variant="primary"
+                  variant="outline"
                   size="md"
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium shadow-sm"
+                  className="border-rose-300 text-rose-700 hover:bg-rose-50"
                 >
-                  {isConfirming ? 'Подтверждение...' : '✓ Подтвердить заявку'}
+                  ✕ Отклонить заявку...
                 </Button>
-
-                {!showRejectForm && (
-                  <Button
-                    onClick={() => setShowRejectForm(true)}
-                    disabled={isConfirming || isRejecting}
-                    variant="outline"
-                    size="md"
-                    className="border-rose-300 text-rose-700 hover:bg-rose-50"
-                  >
-                    ✕ Отклонить заявку...
-                  </Button>
-                )}
-              </div>
-            )}
-
-            {status === OrderStatus.CONFIRMED && (
-              <div className="flex items-center gap-2 text-xs text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-lg p-2.5">
-                <span className="font-semibold">Статус:</span> Заявка подтверждена. Назначьте водителя для выполнения забора и рейса.
-              </div>
-            )}
+              )}
+            </div>
 
             {/* Reject Form Modal / In-place */}
             {showRejectForm && (
@@ -376,20 +383,21 @@ export function OrderActions({
       )}
 
       {/* Manager Controls: Driver Workflow Stage */}
-      {assignedDriverId && !isFinalStatus && (
+      {assignedDriverId && currentStatus !== OrderStatus.CANCELLED && currentStatus !== OrderStatus.REJECTED_BY_MANAGER && (
         <Card className="border-indigo-100 shadow-sm bg-gradient-to-br from-white to-indigo-50/20">
           <CardHeader className="pb-3 border-b border-indigo-100/60 flex flex-row items-center justify-between">
             <CardTitle className="text-sm font-bold text-slate-900 flex items-center gap-2">
               <span>🚗 Статус водительского этапа</span>
             </CardTitle>
             <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
-              {status === OrderStatus.ASSIGNED_TO_DRIVER && 'Ожидает принятия водителем'}
-              {status === OrderStatus.ACCEPTED_BY_DRIVER && 'Принят водителем'}
-              {status === OrderStatus.PICKED_UP && 'Груз забран водителем'}
-              {status === OrderStatus.IN_TRANSIT && 'В пути на склад'}
-              {status === OrderStatus.DELIVERED_TO_WAREHOUSE && 'Доставлен на склад'}
-              {status === OrderStatus.ACCEPTED_BY_MARKETPLACE && 'Принят маркетплейсом'}
-              {!['ASSIGNED_TO_DRIVER', 'ACCEPTED_BY_DRIVER', 'PICKED_UP', 'IN_TRANSIT', 'DELIVERED_TO_WAREHOUSE', 'ACCEPTED_BY_MARKETPLACE'].includes(status) && status}
+              {currentStatus === OrderStatus.ASSIGNED_TO_DRIVER && 'Ожидает принятия водителем'}
+              {currentStatus === OrderStatus.ACCEPTED_BY_DRIVER && 'Принят водителем'}
+              {currentStatus === OrderStatus.PICKED_UP && 'Груз забран водителем'}
+              {currentStatus === OrderStatus.IN_TRANSIT && 'В пути на склад'}
+              {currentStatus === OrderStatus.DELIVERED_TO_WAREHOUSE && 'Доставлен на склад'}
+              {currentStatus === OrderStatus.ACCEPTED_BY_MARKETPLACE && 'Принят маркетплейсом'}
+              {currentStatus === OrderStatus.COMPLETED && 'Заявка завершена'}
+              {!['ASSIGNED_TO_DRIVER', 'ACCEPTED_BY_DRIVER', 'PICKED_UP', 'IN_TRANSIT', 'DELIVERED_TO_WAREHOUSE', 'ACCEPTED_BY_MARKETPLACE', 'COMPLETED'].includes(currentStatus) && currentStatus}
             </span>
           </CardHeader>
           <CardContent className="pt-4 space-y-3">
@@ -398,7 +406,7 @@ export function OrderActions({
             </p>
 
             <div className="flex flex-wrap gap-2 pt-1">
-              {status === OrderStatus.ASSIGNED_TO_DRIVER && (
+              {currentStatus === OrderStatus.ASSIGNED_TO_DRIVER && (
                 <Button
                   type="button"
                   variant="primary"
@@ -411,7 +419,7 @@ export function OrderActions({
                 </Button>
               )}
 
-              {status === OrderStatus.ACCEPTED_BY_DRIVER && (
+              {currentStatus === OrderStatus.ACCEPTED_BY_DRIVER && (
                 <>
                   <Button
                     type="button"
@@ -436,11 +444,21 @@ export function OrderActions({
                 </>
               )}
 
-              {status === OrderStatus.PICKED_UP && (
+              {currentStatus === OrderStatus.PICKED_UP && (
                 <>
                   <div className="w-full text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-2.5 flex items-center gap-2">
-                    <span>✓ Груз успешно забран у отправителя. Заказ перемещён в историю водителя.</span>
+                    <span>✓ Груз успешно забран у отправителя. Машина готовится к отправке или выехала на склад.</span>
                   </div>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="sm"
+                    disabled={isUpdatingDriverStatus}
+                    onClick={() => handleDriverStatusUpdate(OrderStatus.IN_TRANSIT)}
+                    className="bg-sky-600 hover:bg-sky-700 text-white text-xs"
+                  >
+                    {isUpdatingDriverStatus ? 'Сохранение...' : '🚚 Отметить как «В пути»'}
+                  </Button>
                   <Button
                     type="button"
                     variant="outline"
@@ -452,6 +470,96 @@ export function OrderActions({
                     ↩️ Вернуть к «Принято»
                   </Button>
                 </>
+              )}
+
+              {currentStatus === OrderStatus.IN_TRANSIT && (
+                <>
+                  <div className="w-full text-xs text-sky-700 bg-sky-50 border border-sky-200 rounded-lg p-2.5 flex items-center gap-2">
+                    <span>🚚 Машина с грузом находится в пути на склад назначения.</span>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="sm"
+                    disabled={isUpdatingDriverStatus}
+                    onClick={() => handleDriverStatusUpdate(OrderStatus.DELIVERED_TO_WAREHOUSE)}
+                    className="bg-amber-600 hover:bg-amber-700 text-white text-xs"
+                  >
+                    {isUpdatingDriverStatus ? 'Сохранение...' : '🏢 Отметить как «Доставлен на склад»'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isUpdatingDriverStatus}
+                    onClick={() => handleDriverStatusUpdate(OrderStatus.PICKED_UP)}
+                    className="text-xs text-slate-600 border-slate-300 hover:bg-slate-50"
+                  >
+                    ↩️ Вернуть к «Груз забран»
+                  </Button>
+                </>
+              )}
+
+              {currentStatus === OrderStatus.DELIVERED_TO_WAREHOUSE && (
+                <>
+                  <div className="w-full text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2.5 flex items-center gap-2">
+                    <span>🏢 Груз прибыл на склад назначения. Ожидает разгрузки и сдачи на ворота.</span>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="sm"
+                    disabled={isUpdatingDriverStatus}
+                    onClick={() => handleDriverStatusUpdate(OrderStatus.ACCEPTED_BY_MARKETPLACE)}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
+                  >
+                    {isUpdatingDriverStatus ? 'Сохранение...' : '📦 Отметить как «Принят маркетплейсом»'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isUpdatingDriverStatus}
+                    onClick={() => handleDriverStatusUpdate(OrderStatus.IN_TRANSIT)}
+                    className="text-xs text-slate-600 border-slate-300 hover:bg-slate-50"
+                  >
+                    ↩️ Вернуть к «В пути»
+                  </Button>
+                </>
+              )}
+
+              {currentStatus === OrderStatus.ACCEPTED_BY_MARKETPLACE && (
+                <>
+                  <div className="w-full text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg p-2.5 flex items-center gap-2">
+                    <span>✓ Партия успешно сдана и принята на воротах маркетплейса!</span>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="sm"
+                    disabled={isUpdatingDriverStatus}
+                    onClick={() => handleDriverStatusUpdate(OrderStatus.COMPLETED)}
+                    className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold"
+                  >
+                    {isUpdatingDriverStatus ? 'Сохранение...' : '🎉 Завершить заявку («COMPLETED»)'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isUpdatingDriverStatus}
+                    onClick={() => handleDriverStatusUpdate(OrderStatus.DELIVERED_TO_WAREHOUSE)}
+                    className="text-xs text-slate-600 border-slate-300 hover:bg-slate-50"
+                  >
+                    ↩️ Вернуть к «Доставлен на склад»
+                  </Button>
+                </>
+              )}
+
+              {currentStatus === OrderStatus.COMPLETED && (
+                <div className="w-full text-xs text-purple-800 bg-purple-50 border border-purple-200 rounded-lg p-2.5 flex items-center gap-2">
+                  <span>🎉 Заявка полностью завершена и закрыта. Все этапы логистики выполнены.</span>
+                </div>
               )}
             </div>
 

@@ -9,8 +9,10 @@ import { Badge } from '@/components/ui/badge';
 import { formatDateTime } from '@/lib/utils';
 import { formatPhoneNumber } from '@/lib/phone';
 import { OrderActions } from './order-actions';
+import { OrderEditModal } from './order-edit-modal';
 import { PhotoGallery } from '@/components/orders/photo-gallery';
 import { isExpectedAuthError } from '@/lib/errors';
+import { WarehousesService } from '@/modules/warehouses/warehouses.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,7 +37,10 @@ export default async function AdminOrderDetailPage({ params }: AdminOrderDetailP
     notFound();
   }
 
-  const { items: drivers } = await getDriversListAction();
+  const [{ items: drivers }, warehouses] = await Promise.all([
+    getDriversListAction(),
+    WarehousesService.list(),
+  ]);
   const currentAssignment = order.assignments?.[0];
   const assignedDriver = currentAssignment?.driver;
 
@@ -69,7 +74,19 @@ export default async function AdminOrderDetailPage({ params }: AdminOrderDetailP
             </p>
           </div>
 
-          <div>
+          <div className="flex items-center gap-2">
+            <OrderEditModal
+              orderId={order.id}
+              orderNumber={order.orderNumber}
+              initialPickupAddress={order.pickupAddress}
+              initialPickupCity={order.pickupCity}
+              initialPickupContactName={order.pickupContactName}
+              initialPickupContactPhone={order.pickupContactPhone}
+              initialClientComment={order.clientComment}
+              initialDestinations={order.destinations || []}
+              warehouses={warehouses}
+              disabled={order.status === 'COMPLETED' || order.status === 'CANCELLED'}
+            />
             <Link href="/admin/orders">
               <Button variant="outline" size="sm">
                 ← Назад к списку

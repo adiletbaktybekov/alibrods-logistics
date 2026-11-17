@@ -9,6 +9,8 @@ import { Badge } from '@/components/ui/badge';
 import { formatDateTime } from '@/lib/utils';
 import { formatPhoneNumber } from '@/lib/phone';
 import { PhotoGallery } from '@/components/orders/photo-gallery';
+import { ClientOrderEditModal } from './client-order-edit-modal';
+import { WarehousesService } from '@/modules/warehouses/warehouses.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,7 +20,10 @@ interface OrderDetailPageProps {
 
 export default async function OrderDetailPage({ params }: OrderDetailPageProps) {
   const { id } = await params;
-  const order = await getOrderDetail(id);
+  const [order, warehouses] = await Promise.all([
+    getOrderDetail(id),
+    WarehousesService.list(),
+  ]);
 
   if (!order) {
     notFound();
@@ -27,6 +32,13 @@ export default async function OrderDetailPage({ params }: OrderDetailPageProps) 
   const assignment = order.assignments?.[0];
   const driver = assignment?.driver;
   const destinations = order.destinations || [];
+
+  const canClientEdit = [
+    'CREATED',
+    'PENDING_CONFIRMATION',
+    'CONFIRMED',
+    'ASSIGNED_TO_DRIVER',
+  ].includes(order.status);
 
   return (
     <div className="space-y-6">
@@ -56,7 +68,21 @@ export default async function OrderDetailPage({ params }: OrderDetailPageProps) 
             </p>
           </div>
 
-          <div>
+          <div className="flex items-center gap-2">
+            {canClientEdit && (
+              <ClientOrderEditModal
+                orderId={order.id}
+                orderNumber={order.orderNumber}
+                initialPickupAddress={order.pickupAddress}
+                initialPickupCity={order.pickupCity}
+                initialPickupContactName={order.pickupContactName}
+                initialPickupContactPhone={order.pickupContactPhone}
+                initialClientComment={order.clientComment}
+                initialDestinations={order.destinations || []}
+                warehouses={warehouses}
+                canEdit={canClientEdit}
+              />
+            )}
             <Link href="/orders">
               <Button variant="outline" size="sm">
                 ← Назад к списку
@@ -66,17 +92,30 @@ export default async function OrderDetailPage({ params }: OrderDetailPageProps) 
         </div>
       </div>
 
-      {/* Immutable Order Notice */}
-      <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-4 text-xs text-amber-900 flex items-start gap-3">
-        <div className="mt-0.5 text-amber-600">
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
+      {/* Order Status Notice */}
+      {canClientEdit ? (
+        <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-4 text-xs text-blue-900 flex items-start gap-3">
+          <div className="mt-0.5 text-blue-600">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <div>
+            <span className="font-semibold">Редактирование доступно:</span> Вы можете изменить склады, даты доставки, количество паллет и коробок, а также адрес забора груза до момента, пока водитель не заберёт груз.
+          </div>
         </div>
-        <div>
-          <span className="font-semibold">Информация об обработке:</span> Заявка принята логистической службой. Согласно регламенту, клиент не может самостоятельно редактировать или отменять отправленную заявку. Для внесения правок свяжитесь с вашим операционным менеджером.
+      ) : (
+        <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4 text-xs text-slate-700 flex items-start gap-3">
+          <div className="mt-0.5 text-slate-500">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m0 0v2m0-2h2m-2 0H8m13 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <div>
+            <span className="font-semibold">Информация:</span> Груз принят к транспортировке или доставлен. Самостоятельное редактирование клиентом заблокировано.
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column: Destinations, Driver, Pickup & Photos */}

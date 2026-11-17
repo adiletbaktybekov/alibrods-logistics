@@ -5,6 +5,7 @@ import { OrdersService } from '@/modules/orders/orders.service';
 import { DriversService } from '@/modules/drivers/drivers.service';
 import { ClientsService } from '@/modules/clients/clients.service';
 import { registerDriverSchema } from '@/modules/drivers/drivers.dto';
+import { UpdateOrderDto } from '@/modules/orders/orders.dto';
 import { OrderStatus, UserRole, AuditAction, MarketplaceType } from '@prisma/client';
 import { ForbiddenError, UnauthorizedError } from '@/lib/errors';
 import { revalidatePath } from 'next/cache';
@@ -882,6 +883,22 @@ export async function updateDriverWorkflowStatusAction(
     return {
       success: false,
       error: err instanceof Error ? err.message : 'Не удалось обновить статус водительского этапа',
+    };
+  }
+}
+
+export async function updateAdminOrderAction(orderId: string, data: UpdateOrderDto) {
+  const user = await requireStaffUser();
+  try {
+    const updated = await OrdersService.updateOrder(user, orderId, data);
+    revalidatePath(`/admin/orders/${orderId}`);
+    revalidatePath('/admin/orders');
+    revalidatePath('/admin');
+    return { success: true, order: updated };
+  } catch (err: unknown) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Не удалось обновить заявку',
     };
   }
 }

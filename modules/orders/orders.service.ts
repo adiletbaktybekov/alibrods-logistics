@@ -12,6 +12,8 @@ import {
   CreateClientOrderDto,
   UpdateOrderStatusDto,
   AssignDriverDto,
+  UpdateOrderDto,
+  updateOrderSchema,
   WarehouseStatsFilter,
   WarehouseStatsResult,
   WarehouseRankingItem,
@@ -1272,6 +1274,10 @@ export class OrdersService {
       OrderStatus.ASSIGNED_TO_DRIVER,
       OrderStatus.ACCEPTED_BY_DRIVER,
       OrderStatus.PICKED_UP,
+      OrderStatus.IN_TRANSIT,
+      OrderStatus.DELIVERED_TO_WAREHOUSE,
+      OrderStatus.ACCEPTED_BY_MARKETPLACE,
+      OrderStatus.COMPLETED,
     ];
 
     if (!validStatuses.includes(targetStatus)) {
@@ -1300,33 +1306,65 @@ export class OrdersService {
         ? 'Водитель принял заказ (установлено менеджером)'
         : targetStatus === OrderStatus.PICKED_UP
         ? 'Водитель забрал груз (установлено менеджером)'
+        : targetStatus === OrderStatus.IN_TRANSIT
+        ? 'Груз в пути (установлено менеджером)'
+        : targetStatus === OrderStatus.DELIVERED_TO_WAREHOUSE
+        ? 'Груз доставлен на склад (установлено менеджером)'
+        : targetStatus === OrderStatus.ACCEPTED_BY_MARKETPLACE
+        ? 'Груз принят маркетплейсом (установлено менеджером)'
+        : targetStatus === OrderStatus.COMPLETED
+        ? 'Заявка закрыта и успешно выполнена (установлено менеджером)'
         : 'Возврат к этапу назначения водителя (установлено менеджером)';
 
     const historyComment = comment ? `${actionText}. Примечание: ${comment.trim()}` : actionText;
 
     const updated = await prisma.$transaction(async (tx) => {
+      const orderUpdateData: Record<string, any> = { status: targetStatus };
+
+      if (
+        targetStatus === OrderStatus.DELIVERED_TO_WAREHOUSE ||
+        targetStatus === OrderStatus.ACCEPTED_BY_MARKETPLACE ||
+        targetStatus === OrderStatus.COMPLETED
+      ) {
+        if (!order.deliveredAt) {
+          orderUpdateData.deliveredAt = new Date();
+        }
+      }
+
       const updatedOrder = await tx.order.update({
         where: { id: orderId },
-        data: { status: targetStatus },
+        data: orderUpdateData,
       });
 
       if (activeAssignment) {
         let assignmentStatus: AssignmentStatus = AssignmentStatus.ASSIGNED;
         if (targetStatus === OrderStatus.ACCEPTED_BY_DRIVER) {
           assignmentStatus = AssignmentStatus.ACCEPTED;
-        } else if (targetStatus === OrderStatus.PICKED_UP) {
+        } else if (
+          targetStatus === OrderStatus.PICKED_UP ||
+          targetStatus === OrderStatus.IN_TRANSIT ||
+          targetStatus === OrderStatus.DELIVERED_TO_WAREHOUSE ||
+          targetStatus === OrderStatus.ACCEPTED_BY_MARKETPLACE
+        ) {
           assignmentStatus = AssignmentStatus.IN_PROGRESS;
+        } else if (targetStatus === OrderStatus.COMPLETED) {
+          assignmentStatus = AssignmentStatus.COMPLETED;
+        }
+
+        const assignmentUpdateData: Record<string, any> = {
+          status: assignmentStatus,
+          acceptedAt:
+            targetStatus !== OrderStatus.ASSIGNED_TO_DRIVER
+              ? activeAssignment.acceptedAt || new Date()
+              : activeAssignment.acceptedAt,
+        };
+        if (targetStatus === OrderStatus.COMPLETED) {
+          assignmentUpdateData.completedAt = activeAssignment.completedAt || new Date();
         }
 
         await tx.orderAssignment.update({
           where: { id: activeAssignment.id },
-          data: {
-            status: assignmentStatus,
-            acceptedAt:
-              targetStatus === OrderStatus.ACCEPTED_BY_DRIVER || targetStatus === OrderStatus.PICKED_UP
-                ? activeAssignment.acceptedAt || new Date()
-                : activeAssignment.acceptedAt,
-          },
+          data: assignmentUpdateData,
         });
       }
 
@@ -1370,6 +1408,209 @@ export class OrdersService {
       targetStatus,
       comment
     ).catch(() => {});
+
+    return updated;
+  }
+
+  /**
+   * Updates an existing order (destinations, quantities, addresses, comments).
+   * Validates client IDOR ownership and allowable lifecycle stages.
+   * Logs changes in OrderStatusHistory and AuditLog.
+   * Syncs to Google Sheets (preserving manual accountant pricing).
+   */
+  public static async updateOrder(
+    user: AuthenticatedUser,
+    orderId: string,
+    dto: UpdateOrderDto,
+    ipAddress?: string
+  ) {
+    const isStaff = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'].includes(user.role);
+    const isClient = user.role === 'CLIENT';
+
+    if (!isStaff && !isClient) {
+      throw new ForbiddenError('У вас нет прав на редактирование заявки');
+    }
+
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: {
+        client: true,
+        destinations: {
+          include: { warehouse: true },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundError('Order', orderId);
+    }
+
+    // Client restrictions:
+    if (isClient) {
+      if (!order.client || order.client.userId !== user.id) {
+        throw new ForbiddenError('Вы можете редактировать только свои собственные заявки');
+      }
+
+      // Allowed statuses for client editing: before driver pickup
+      const allowedClientStatuses: OrderStatus[] = [
+        OrderStatus.CREATED,
+        OrderStatus.PENDING_CONFIRMATION,
+        OrderStatus.CONFIRMED,
+        OrderStatus.ASSIGNED_TO_DRIVER,
+      ];
+
+      if (!allowedClientStatuses.includes(order.status)) {
+        throw new ValidationError(
+          'Редактирование заявки селлером недоступно после того, как груз принят или забран водителем'
+        );
+      }
+    } else {
+      // Staff restrictions: cannot edit cancelled or completed orders
+      if (order.status === OrderStatus.CANCELLED || order.status === OrderStatus.COMPLETED) {
+        throw new ValidationError('Нельзя редактировать завершённые или отменённые заявки');
+      }
+    }
+
+    // Validation
+    const parsed = updateOrderSchema.parse(dto);
+    const totalPalletsCount = parsed.destinations.reduce((acc, d) => acc + (d.palletsCount || 0), 0);
+    const totalBoxesCount = parsed.destinations.reduce((acc, d) => acc + (d.boxesCount || 0), 0);
+
+    if (totalPalletsCount === 0 && totalBoxesCount === 0) {
+      throw new ValidationError('Заявка должна содержать хотя бы одну коробку или паллету');
+    }
+
+    const firstDest = parsed.destinations[0];
+    let primaryWarehouseId = firstDest.isCustomWarehouse ? null : firstDest.warehouseId;
+    let primaryMarketplace: MarketplaceType = order.marketplace;
+    if (primaryWarehouseId) {
+      const wh = await prisma.warehouse.findUnique({ where: { id: primaryWarehouseId } });
+      if (wh) primaryMarketplace = wh.marketplace;
+    }
+
+    const scheduledPickupAt = firstDest.deliveryDate || order.scheduledPickupAt;
+
+    // Build diff for audit log
+    const oldDestinationsSummary = order.destinations.map((d) => ({
+      warehouse: d.customWarehouseName || d.warehouse?.name || 'Склад',
+      date: d.deliveryDate,
+      pallets: d.palletsCount,
+      boxes: d.boxesCount,
+    }));
+
+    const newDestinationsSummary = parsed.destinations.map((d) => ({
+      warehouse: d.customWarehouseName || d.warehouseId,
+      date: d.deliveryDate,
+      pallets: d.palletsCount,
+      boxes: d.boxesCount,
+    }));
+
+    const updated = await prisma.$transaction(async (tx) => {
+      // 1. Delete old destinations
+      await tx.orderDestination.deleteMany({
+        where: { orderId },
+      });
+
+      // 2. Create new destinations
+      const destinationsCreateData = parsed.destinations.map((d) => ({
+        orderId,
+        warehouseId: d.isCustomWarehouse ? null : d.warehouseId,
+        isCustomWarehouse: Boolean(d.isCustomWarehouse),
+        customWarehouseName: d.isCustomWarehouse
+          ? d.customWarehouseName?.trim() || 'Индивидуальный склад'
+          : null,
+        deliveryDate: d.deliveryDate,
+        boxesCount: d.boxesCount || 0,
+        palletsCount: d.palletsCount || 0,
+        comment: d.comment?.trim() || null,
+      }));
+
+      await tx.orderDestination.createMany({
+        data: destinationsCreateData,
+      });
+
+      // 3. Update order fields
+      const orderUpdateData: Record<string, any> = {
+        warehouseId: primaryWarehouseId || order.warehouseId,
+        marketplace: primaryMarketplace,
+        scheduledPickupAt,
+        totalPalletsCount,
+        totalBoxesCount,
+        clientComment: parsed.clientComment !== undefined ? parsed.clientComment : order.clientComment,
+      };
+
+      if (parsed.pickupAddress !== undefined) {
+        orderUpdateData.pickupAddress = parsed.pickupAddress;
+      }
+      if (parsed.pickupCity !== undefined) {
+        orderUpdateData.pickupCity = parsed.pickupCity;
+      }
+      if (parsed.pickupContactName !== undefined) {
+        orderUpdateData.pickupContactName = parsed.pickupContactName;
+      }
+      if (parsed.pickupContactPhone !== undefined) {
+        orderUpdateData.pickupContactPhone = parsed.pickupContactPhone;
+      }
+
+      const updatedOrder = await tx.order.update({
+        where: { id: orderId },
+        data: orderUpdateData,
+        include: {
+          warehouse: true,
+          destinations: {
+            include: { warehouse: true },
+            orderBy: { createdAt: 'asc' },
+          },
+          client: true,
+        },
+      });
+
+      // 4. Record history entry
+      const editorLabel = isStaff ? `менеджером (${user.email || user.phone || 'сотрудник'})` : 'клиентом';
+      await tx.orderStatusHistory.create({
+        data: {
+          orderId,
+          fromStatus: order.status,
+          toStatus: order.status,
+          changedById: user.id,
+          comment: `Заявка отредактирована ${editorLabel}. Новый объём: ${totalPalletsCount} палл., ${totalBoxesCount} кор.`,
+        },
+      });
+
+      return updatedOrder;
+    });
+
+    // Audit Log
+    await AuditService.log({
+      userId: user.id,
+      action: AuditAction.UPDATE,
+      resource: 'Order',
+      resourceId: orderId,
+      oldValue: {
+        totalPalletsCount: order.totalPalletsCount,
+        totalBoxesCount: order.totalBoxesCount,
+        pickupAddress: order.pickupAddress,
+        clientComment: order.clientComment,
+        destinations: oldDestinationsSummary,
+      },
+      newValue: {
+        totalPalletsCount,
+        totalBoxesCount,
+        pickupAddress: parsed.pickupAddress,
+        clientComment: parsed.clientComment,
+        destinations: newDestinationsSummary,
+      },
+      metadata: {
+        editedByRole: user.role,
+      },
+      ipAddress,
+    });
+
+    // Sync updated order to Google Sheets (preserves accountant cost and currency)
+    GoogleSheetsSyncService.syncOrder(orderId).catch((err) => {
+      logger.error({ err, orderId }, 'Failed to sync edited order to Google Sheets');
+    });
 
     return updated;
   }

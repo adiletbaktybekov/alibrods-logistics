@@ -79,7 +79,7 @@ export function MiniAppOrderForm({ warehouses }: MiniAppOrderFormProps) {
       customWarehouseName: '',
       deliveryDate: minDateString,
       palletsCount: 0,
-      boxesCount: 1,
+      boxesCount: 0,
       comment: '',
     },
   ]);
@@ -104,7 +104,7 @@ export function MiniAppOrderForm({ warehouses }: MiniAppOrderFormProps) {
         customWarehouseName: '',
         deliveryDate: minDateString,
         palletsCount: 0,
-        boxesCount: 1,
+        boxesCount: 0,
         comment: '',
       },
     ]);

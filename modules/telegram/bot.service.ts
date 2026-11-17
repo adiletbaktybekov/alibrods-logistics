@@ -815,6 +815,7 @@ export class TelegramBotService {
           clientCompanyName: processedOrder.client?.companyName,
           clientContactPerson: processedOrder.client?.contactPerson,
           clientPhone: processedOrder.client?.contactPhone,
+          clientWarehouseAddress: processedOrder.client?.warehouseAddress || processedOrder.pickupAddress || null,
           clientComment: processedOrder.clientComment,
           managerComment: `Подтверждено: ${managerName}`,
         });

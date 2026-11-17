@@ -70,11 +70,16 @@ export class NotificationDispatcherService {
         warehouseName: getOrderWarehouseName(order),
       });
 
+      const clientWhAddress = order.client?.warehouseAddress?.trim() || order.pickupAddress?.trim() || null;
+
       // 1. Notify Client via Client Bot (@AliBrosClientBot) if linked
       const clientTg = order.client?.user?.telegramAccount;
       if (clientTg?.telegramId) {
         const clientBot = getClientTelegramBotClient();
-        const clientMsg = TelegramNotificationService.formatClientOrderCreatedMessage(order as any);
+        const clientMsg = TelegramNotificationService.formatClientOrderCreatedMessage({
+          ...order,
+          clientWarehouseAddress: clientWhAddress,
+        } as any);
 
         await clientBot.sendMessageWithRetry({
           chatId: clientTg.telegramId.toString(),
@@ -120,6 +125,7 @@ export class NotificationDispatcherService {
         clientCompanyName: order.client?.companyName,
         clientContactPerson: order.client?.contactPerson,
         clientPhone: order.client?.contactPhone,
+        clientWarehouseAddress: clientWhAddress,
         clientComment: order.clientComment,
         currentStatus: 'CREATED (Ожидает подтверждения)',
         scheduleNote,
@@ -180,6 +186,8 @@ export class NotificationDispatcherService {
         comment: d.comment,
       }));
 
+      const clientWhAddress = order.client?.warehouseAddress?.trim() || order.pickupAddress?.trim() || null;
+
       await TelegramNotificationService.notifyGroupEvent('ORDER_CONFIRMED', {
         orderId: order.id,
         orderNumber: order.orderNumber,
@@ -191,6 +199,7 @@ export class NotificationDispatcherService {
         clientCompanyName: order.client?.companyName,
         clientContactPerson: order.client?.contactPerson,
         clientPhone: order.client?.contactPhone,
+        clientWarehouseAddress: clientWhAddress,
         clientComment: order.clientComment,
         managerComment: comment,
       });
@@ -321,11 +330,13 @@ export class NotificationDispatcherService {
                 .join(', ')}</b>`
             : `Склад: <b>${getOrderWarehouseName(order)}</b>`;
 
+        const pickupAddrDisplay = order.client?.warehouseAddress?.trim() || order.pickupAddress?.trim() || 'Адрес склада не указан';
         const clientText = [
           `🚛 <b>На вашу заявку назначен водитель!</b>`,
           ``,
           `Заявка: <code>#${order.orderNumber}</code>`,
           warehouseLabel,
+          `Адрес забора: <b>${pickupAddrDisplay}</b>`,
           ``,
           driverDetails,
           ``,
@@ -407,10 +418,18 @@ export class NotificationDispatcherService {
         );
       }
 
+      const pickupAddressText = order.pickupAddress?.trim()
+        ? `${order.pickupCity ? `${order.pickupCity}, ` : ''}${order.pickupAddress.trim()}`
+        : (order.client?.warehouseAddress?.trim() || 'Адрес склада не указан');
+
       textLines.push(
         ``,
-        `📍 <b>Адрес забора:</b> ${order.pickupCity ? `${order.pickupCity}, ` : ''}${order.pickupAddress}`
+        `📍 <b>Адрес забора / склада:</b> ${pickupAddressText}`
       );
+
+      if (order.client?.warehouseAddress?.trim() && order.pickupAddress?.trim() && order.client.warehouseAddress.trim() !== order.pickupAddress.trim()) {
+        textLines.push(`🏢 <b>Склад компании:</b> ${order.client.warehouseAddress.trim()}`);
+      }
 
       if (order.pickupContactName) {
         textLines.push(

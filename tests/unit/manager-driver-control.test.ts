@@ -20,11 +20,20 @@ describe('Manager Driver Workflow Control in Admin', () => {
       OrderStatus.ASSIGNED_TO_DRIVER,
       OrderStatus.ACCEPTED_BY_DRIVER,
       OrderStatus.PICKED_UP,
+      OrderStatus.IN_TRANSIT,
+      OrderStatus.DELIVERED_TO_WAREHOUSE,
+      OrderStatus.ACCEPTED_BY_MARKETPLACE,
+      OrderStatus.COMPLETED,
     ];
 
     expect(validDriverWorkflowStatuses).toContain(OrderStatus.ASSIGNED_TO_DRIVER);
     expect(validDriverWorkflowStatuses).toContain(OrderStatus.ACCEPTED_BY_DRIVER);
     expect(validDriverWorkflowStatuses).toContain(OrderStatus.PICKED_UP);
+    expect(validDriverWorkflowStatuses).toContain(OrderStatus.IN_TRANSIT);
+    expect(validDriverWorkflowStatuses).toContain(OrderStatus.DELIVERED_TO_WAREHOUSE);
+    expect(validDriverWorkflowStatuses).toContain(OrderStatus.ACCEPTED_BY_MARKETPLACE);
+    expect(validDriverWorkflowStatuses).toContain(OrderStatus.COMPLETED);
     expect(validDriverWorkflowStatuses).not.toContain(OrderStatus.CANCELLED);
+    expect(validDriverWorkflowStatuses).not.toContain(OrderStatus.REJECTED_BY_MANAGER);
   });
 });

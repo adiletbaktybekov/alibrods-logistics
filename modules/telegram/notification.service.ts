@@ -28,6 +28,7 @@ export interface ManagerApprovalNotificationPayload {
   clientCompanyName?: string | null;
   clientContactPerson?: string | null;
   clientPhone?: string | null;
+  clientWarehouseAddress?: string | null;
   clientComment?: string | null;
   currentStatus?: string;
   scheduleNote?: string | null;
@@ -61,6 +62,7 @@ export interface TelegramOrderNotificationPayload {
   clientCompanyName?: string | null;
   clientContactPerson?: string | null;
   clientPhone?: string | null;
+  clientWarehouseAddress?: string | null;
   clientComment?: string | null;
   status?: OrderStatus | string;
   driverName?: string;
@@ -240,6 +242,7 @@ export class TelegramNotificationService {
     totalPalletsCount?: number;
     totalBoxesCount?: number;
     clientComment?: string | null;
+    clientWarehouseAddress?: string | null;
     destinations?: Array<{
       isCustomWarehouse?: boolean;
       customWarehouseName?: string | null;
@@ -254,6 +257,7 @@ export class TelegramNotificationService {
   }): string {
     const destinations = order.destinations || [];
     const clientComment = order.clientComment ? order.clientComment.trim() : '';
+    const clientWhAddress = order.clientWarehouseAddress?.trim() || 'Адрес склада не указан';
 
     if (destinations.length > 1) {
       const items = destinations.map((d) => {
@@ -306,6 +310,7 @@ export class TelegramNotificationService {
       const parts = [
         `📦 <b>Ваша заявка принята и отправлена на согласование!</b>`,
         `Номер заявки: <code>#${order.orderNumber}</code>`,
+        `Адрес склада клиента: <b>${escapeHtml(clientWhAddress)}</b>`,
         `Склады назначения:`,
         items.join('\n\n'),
         ``,
@@ -360,6 +365,7 @@ export class TelegramNotificationService {
     const parts = [
       `📦 <b>Ваша заявка принята и отправлена на согласование!</b>`,
       `Номер заявки: <code>#${order.orderNumber}</code>`,
+      `Адрес склада клиента: <b>${escapeHtml(clientWhAddress)}</b>`,
       `Склад назначения: <b>${escapeHtml(whName)}</b>`,
       `Планируемая дата: <b>${pickupDateStr}</b>`,
       `Объём поставки:`,
@@ -412,6 +418,7 @@ export class TelegramNotificationService {
         `Компания: <b>${escapeHtml(payload.clientCompanyName || '—')}</b>`,
         `Контактное лицо: <b>${escapeHtml(payload.clientContactPerson || '—')}</b>`,
         payload.clientPhone ? `Телефон: <code>${escapeHtml(payload.clientPhone)}</code>` : '',
+        `Адрес склада: <b>${escapeHtml(payload.clientWarehouseAddress?.trim() || 'Адрес склада не указан')}</b>`,
       ].filter(Boolean);
 
       if (payload.destinations && payload.destinations.length > 0) {
@@ -622,6 +629,7 @@ export class TelegramNotificationService {
         ``,
         `Номер заявки: <code>#${payload.orderNumber}</code>`,
         `Клиент: <b>${clientInfo}</b>`,
+        `Адрес склада: <b>${escapeHtml(payload.clientWarehouseAddress?.trim() || 'Адрес склада не указан')}</b>`,
         `Маркетплейс: <b>${payload.marketplace}</b>`,
       ];
 

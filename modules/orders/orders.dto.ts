@@ -96,12 +96,22 @@ export const assignDriverSchema = z.object({
   notes: z.string().max(500).optional(),
 });
 
+export const updateOrderSchema = z.object({
+  destinations: z.array(destinationItemInputSchema).min(1, 'Добавьте хотя бы один склад назначения'),
+  pickupAddress: z.string().max(500, 'Адрес не может превышать 500 символов').optional().nullable(),
+  pickupCity: z.string().max(100).optional().nullable(),
+  pickupContactName: z.string().max(100).optional().nullable(),
+  pickupContactPhone: optionalPhoneSchema,
+  clientComment: z.string().max(1000, 'Комментарий не может превышать 1000 символов').optional().nullable(),
+});
+
 export type OrderItemInput = z.infer<typeof orderItemInputSchema>;
 export type DestinationItemInput = z.infer<typeof destinationItemInputSchema>;
 export type CreateOrderDto = z.infer<typeof createOrderSchema>;
 export type CreateClientOrderDto = z.infer<typeof createClientOrderSchema>;
 export type UpdateOrderStatusDto = z.infer<typeof updateOrderStatusSchema>;
 export type AssignDriverDto = z.infer<typeof assignDriverSchema>;
+export type UpdateOrderDto = z.infer<typeof updateOrderSchema>;
 
 export interface WarehouseStatsFilter {
   period?: 'today' | 'yesterday' | '7d' | '30d' | 'month' | 'custom' | string;

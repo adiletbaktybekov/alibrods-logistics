@@ -1,9 +1,10 @@
 'use server';
 
 import { redirect } from 'next/navigation';
+import { revalidatePath } from 'next/cache';
 import { getCurrentUser } from './auth';
 import { OrdersService } from '@/modules/orders/orders.service';
-import { createClientOrderSchema } from '@/modules/orders/orders.dto';
+import { createClientOrderSchema, UpdateOrderDto } from '@/modules/orders/orders.dto';
 import { OrderStatus } from '@prisma/client';
 
 export async function createOrderAction(prevState: unknown, formData: FormData) {
@@ -159,6 +160,26 @@ export async function getClientDashboardStats() {
       inProcessing: 0,
       completed: 0,
       recentOrders: [],
+    };
+  }
+}
+
+export async function updateClientOrderAction(orderId: string, data: UpdateOrderDto) {
+  const user = await getCurrentUser();
+  if (!user || user.role !== 'CLIENT') {
+    return { success: false, error: 'Необходимо войти в систему как клиент' };
+  }
+
+  try {
+    const updated = await OrdersService.updateOrder(user, orderId, data);
+    revalidatePath(`/orders/${orderId}`);
+    revalidatePath('/orders');
+    revalidatePath('/dashboard');
+    return { success: true, order: updated };
+  } catch (err: unknown) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Не удалось обновить заявку',
     };
   }
 }
