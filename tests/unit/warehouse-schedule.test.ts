@@ -1,10 +1,19 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   CONFIRMED_WAREHOUSES,
   isWarehouseOpenOnDate,
   getDayOfWeekFromDate,
   WarehousesService,
 } from '@/modules/warehouses/warehouses.service';
+
+vi.mock('@/database/prisma', () => ({
+  prisma: {
+    warehouse: {
+      findMany: vi.fn().mockResolvedValue([]),
+      count: vi.fn().mockResolvedValue(0),
+    },
+  },
+}));
 
 describe('Warehouse Schedule Engine (12 Confirmed Warehouses)', () => {
   it('should have exactly 12 confirmed warehouses without extraneous entries', () => {

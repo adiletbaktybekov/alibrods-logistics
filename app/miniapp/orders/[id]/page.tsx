@@ -5,6 +5,7 @@ import { getCurrentUser } from '@/app/actions/auth';
 import { getOrderDetail } from '@/app/actions/orders';
 import { MiniAppHeader } from '@/components/miniapp/miniapp-header';
 import { StatusBadge, STATUS_LABELS } from '@/components/ui/status-badge';
+import { StatusAccordion } from '@/components/ui/status-accordion';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { formatDateTime } from '@/lib/utils';
@@ -121,12 +122,14 @@ export default async function MiniAppOrderDetailPage({ params }: MiniAppOrderDet
           )}
         </Card>
 
-        {/* Status Timeline */}
-        <Card className="rounded-2xl border-slate-200 bg-white shadow-xs p-4 space-y-3">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">
-            История доставки
-          </h3>
-
+        {/* Status Timeline with StatusAccordion */}
+        <StatusAccordion
+          title="Статусы"
+          subtitle="История доставки"
+          defaultOpen={true}
+          badge={<StatusBadge status={order.status} className="text-[10px]" />}
+          className="rounded-2xl"
+        >
           {order.statusHistory && order.statusHistory.length > 0 ? (
             <div className="space-y-3 pt-1">
               {order.statusHistory.map((h, i) => (
@@ -151,7 +154,7 @@ export default async function MiniAppOrderDetailPage({ params }: MiniAppOrderDet
           ) : (
             <p className="text-xs text-slate-400">История изменений пуста</p>
           )}
-        </Card>
+        </StatusAccordion>
 
         {/* Photos Section */}
         <Card className="rounded-2xl border-slate-200 bg-white shadow-xs p-4 space-y-3">

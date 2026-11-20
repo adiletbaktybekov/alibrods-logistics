@@ -85,31 +85,17 @@ describe('Telegram Driver Bot & Pairing System', () => {
       ]);
 
       expect(DRIVER_ALLOWED_TRANSITIONS[OrderStatus.PICKED_UP]).toEqual([
-        OrderStatus.IN_TRANSIT,
-      ]);
-
-      expect(DRIVER_ALLOWED_TRANSITIONS[OrderStatus.IN_TRANSIT]).toEqual([
-        OrderStatus.DELIVERED_TO_WAREHOUSE,
-      ]);
-
-      expect(DRIVER_ALLOWED_TRANSITIONS[OrderStatus.DELIVERED_TO_WAREHOUSE]).toEqual([
-        OrderStatus.ACCEPTED_BY_MARKETPLACE,
+        OrderStatus.COMPLETED,
       ]);
     });
 
     it('should prohibit illegal jumps and reverse transitions', () => {
-      // Driver cannot jump from ASSIGNED_TO_DRIVER directly to DELIVERED_TO_WAREHOUSE
+      // Driver cannot jump from ASSIGNED_TO_DRIVER directly to COMPLETED
       expect(DRIVER_ALLOWED_TRANSITIONS[OrderStatus.ASSIGNED_TO_DRIVER]).not.toContain(
-        OrderStatus.DELIVERED_TO_WAREHOUSE
-      );
-
-      // Driver cannot move from DELIVERED_TO_WAREHOUSE back to IN_TRANSIT
-      expect(DRIVER_ALLOWED_TRANSITIONS[OrderStatus.DELIVERED_TO_WAREHOUSE]).not.toContain(
-        OrderStatus.IN_TRANSIT
+        OrderStatus.COMPLETED
       );
 
       // Final statuses cannot be transitioned further by driver
-      expect(DRIVER_ALLOWED_TRANSITIONS[OrderStatus.ACCEPTED_BY_MARKETPLACE]).toEqual([]);
       expect(DRIVER_ALLOWED_TRANSITIONS[OrderStatus.COMPLETED]).toEqual([]);
       expect(DRIVER_ALLOWED_TRANSITIONS[OrderStatus.CANCELLED]).toEqual([]);
       expect(DRIVER_ALLOWED_TRANSITIONS[OrderStatus.REJECTED_BY_MANAGER]).toEqual([]);
@@ -122,9 +108,10 @@ describe('Telegram Driver Bot & Pairing System', () => {
       expect(ACTIVE_DRIVER_STATUSES).not.toContain(OrderStatus.COMPLETED);
 
       expect(COMPLETED_DRIVER_STATUSES).toContain(OrderStatus.PICKED_UP);
-      expect(COMPLETED_DRIVER_STATUSES).toContain(OrderStatus.IN_TRANSIT);
-      expect(COMPLETED_DRIVER_STATUSES).toContain(OrderStatus.ACCEPTED_BY_MARKETPLACE);
       expect(COMPLETED_DRIVER_STATUSES).toContain(OrderStatus.COMPLETED);
+      expect(COMPLETED_DRIVER_STATUSES).not.toContain('IN_TRANSIT');
+      expect(COMPLETED_DRIVER_STATUSES).not.toContain('DELIVERED_TO_WAREHOUSE');
+      expect(COMPLETED_DRIVER_STATUSES).not.toContain('ACCEPTED_BY_MARKETPLACE');
       expect(COMPLETED_DRIVER_STATUSES).not.toContain(OrderStatus.ACCEPTED_BY_DRIVER);
     });
   });

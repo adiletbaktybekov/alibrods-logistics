@@ -5,7 +5,7 @@ import { getAdminOrdersAction } from '@/app/actions/admin';
 import { WarehousesService, WarehouseItem } from '@/modules/warehouses/warehouses.service';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { StatusBadge, STATUS_LABELS } from '@/components/ui/status-badge';
+import { StatusBadge, ACTIVE_STATUS_LABELS } from '@/components/ui/status-badge';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { formatDateTime } from '@/lib/utils';
@@ -71,7 +71,7 @@ export default async function AdminOrdersPage({ searchParams }: AdminOrdersPageP
 
   const { fromRecord, toRecord } = calculateDisplayRange(page, pageSize, items.length, total);
 
-  const statusOptions: { value: OrderStatus; label: string }[] = Object.entries(STATUS_LABELS).map(
+  const statusOptions: { value: OrderStatus; label: string }[] = Object.entries(ACTIVE_STATUS_LABELS).map(
     ([val, label]) => ({
       value: val as OrderStatus,
       label,

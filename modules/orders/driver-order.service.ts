@@ -12,9 +12,9 @@ export const DRIVER_ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   CONFIRMED: [],
   ASSIGNED_TO_DRIVER: [OrderStatus.ACCEPTED_BY_DRIVER],
   ACCEPTED_BY_DRIVER: [OrderStatus.PICKED_UP],
-  PICKED_UP: [OrderStatus.IN_TRANSIT],
-  IN_TRANSIT: [OrderStatus.DELIVERED_TO_WAREHOUSE],
-  DELIVERED_TO_WAREHOUSE: [OrderStatus.ACCEPTED_BY_MARKETPLACE],
+  PICKED_UP: [OrderStatus.COMPLETED],
+  IN_TRANSIT: [],
+  DELIVERED_TO_WAREHOUSE: [],
   ACCEPTED_BY_MARKETPLACE: [],
   COMPLETED: [],
   REJECTED_BY_MANAGER: [],
@@ -28,9 +28,6 @@ export const ACTIVE_DRIVER_STATUSES: OrderStatus[] = [
 
 export const COMPLETED_DRIVER_STATUSES: OrderStatus[] = [
   OrderStatus.PICKED_UP,
-  OrderStatus.IN_TRANSIT,
-  OrderStatus.DELIVERED_TO_WAREHOUSE,
-  OrderStatus.ACCEPTED_BY_MARKETPLACE,
   OrderStatus.COMPLETED,
 ];
 
@@ -214,16 +211,9 @@ export class DriverOrderService {
     if (targetStatus === OrderStatus.ACCEPTED_BY_DRIVER) {
       newAssignmentStatus = AssignmentStatus.ACCEPTED;
       acceptedAtDate = new Date();
-    } else if (
-      targetStatus === OrderStatus.PICKED_UP ||
-      targetStatus === OrderStatus.IN_TRANSIT ||
-      targetStatus === OrderStatus.DELIVERED_TO_WAREHOUSE
-    ) {
+    } else if (targetStatus === OrderStatus.PICKED_UP) {
       newAssignmentStatus = AssignmentStatus.IN_PROGRESS;
-    } else if (
-      targetStatus === OrderStatus.ACCEPTED_BY_MARKETPLACE ||
-      targetStatus === OrderStatus.COMPLETED
-    ) {
+    } else if (targetStatus === OrderStatus.COMPLETED) {
       newAssignmentStatus = AssignmentStatus.COMPLETED;
       completedAtDate = new Date();
     }
@@ -231,9 +221,7 @@ export class DriverOrderService {
     const defaultComments: Record<OrderStatus, string> = {
       [OrderStatus.ACCEPTED_BY_DRIVER]: 'Водитель принял рейс в работу',
       [OrderStatus.PICKED_UP]: 'Водитель забрал груз у клиента',
-      [OrderStatus.IN_TRANSIT]: 'Машина выехала в сторону склада маркетплейса',
-      [OrderStatus.DELIVERED_TO_WAREHOUSE]: 'Машина прибыла на склад маркетплейса',
-      [OrderStatus.ACCEPTED_BY_MARKETPLACE]: 'Груз сдан и принят маркетплейсом',
+      [OrderStatus.COMPLETED]: 'Доставка успешно завершена',
     } as Record<OrderStatus, string>;
 
     const statusComment = comment || defaultComments[targetStatus] || `Статус обновлён водителем: ${targetStatus}`;
@@ -244,7 +232,7 @@ export class DriverOrderService {
         where: { id: orderId },
         data: {
           status: targetStatus,
-          ...(targetStatus === OrderStatus.DELIVERED_TO_WAREHOUSE ? { deliveredAt: new Date() } : {}),
+          ...(targetStatus === OrderStatus.COMPLETED ? { deliveredAt: new Date() } : {}),
         },
       });
 

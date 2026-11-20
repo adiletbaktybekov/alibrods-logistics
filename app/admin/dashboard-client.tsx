@@ -124,7 +124,7 @@ export function DashboardClient({ initialStats }: DashboardClientProps) {
     {
       label: 'В доставке',
       value: stats.inDelivery,
-      description: 'Назначены, забраны или в пути',
+      description: 'Назначены или забраны водителем',
       color: 'text-blue-700',
       bgColor: 'bg-blue-50/60',
       borderColor: 'border-blue-200',
@@ -133,7 +133,7 @@ export function DashboardClient({ initialStats }: DashboardClientProps) {
     {
       label: 'Завершено',
       value: stats.completed,
-      description: 'Приняты маркетплейсом',
+      description: 'Завершённые заказы',
       color: 'text-emerald-700',
       bgColor: 'bg-emerald-50/60',
       borderColor: 'border-emerald-200',

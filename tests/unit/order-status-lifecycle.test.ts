@@ -127,39 +127,7 @@ describe('Order Status Lifecycle & Full Pipeline Execution', () => {
     );
     expect(resPickedUp.status).toBe(OrderStatus.PICKED_UP);
 
-    // 3. Advance to IN_TRANSIT
-    const resTransit = await OrdersService.updateDriverWorkflowStatusByManager(
-      managerUser as any,
-      'order-1',
-      OrderStatus.IN_TRANSIT
-    );
-    expect(resTransit.status).toBe(OrderStatus.IN_TRANSIT);
-
-    // 4. Advance to DELIVERED_TO_WAREHOUSE
-    const resDelivered = await OrdersService.updateDriverWorkflowStatusByManager(
-      managerUser as any,
-      'order-1',
-      OrderStatus.DELIVERED_TO_WAREHOUSE
-    );
-    expect(resDelivered.status).toBe(OrderStatus.DELIVERED_TO_WAREHOUSE);
-    expect(prisma.order.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          status: OrderStatus.DELIVERED_TO_WAREHOUSE,
-          deliveredAt: expect.any(Date),
-        }),
-      })
-    );
-
-    // 5. Advance to ACCEPTED_BY_MARKETPLACE
-    const resMp = await OrdersService.updateDriverWorkflowStatusByManager(
-      managerUser as any,
-      'order-1',
-      OrderStatus.ACCEPTED_BY_MARKETPLACE
-    );
-    expect(resMp.status).toBe(OrderStatus.ACCEPTED_BY_MARKETPLACE);
-
-    // 6. Complete the order (COMPLETED)
+    // 3. Advance to COMPLETED
     const resCompleted = await OrdersService.updateDriverWorkflowStatusByManager(
       managerUser as any,
       'order-1',
@@ -182,5 +150,14 @@ describe('Order Status Lifecycle & Full Pipeline Execution', () => {
         }),
       })
     );
+
+    // Verify retired statuses are rejected
+    await expect(
+      OrdersService.updateDriverWorkflowStatusByManager(
+        managerUser as any,
+        'order-1',
+        'IN_TRANSIT' as any
+      )
+    ).rejects.toThrow('Недопустимый статус водительского этапа');
   });
 });

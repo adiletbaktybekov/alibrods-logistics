@@ -5,6 +5,7 @@ import { getAdminOrderDetailAction, getDriversListAction } from '@/app/actions/a
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { StatusBadge, STATUS_LABELS } from '@/components/ui/status-badge';
+import { StatusAccordion } from '@/components/ui/status-accordion';
 import { Badge } from '@/components/ui/badge';
 import { formatDateTime } from '@/lib/utils';
 import { formatPhoneNumber } from '@/lib/phone';
@@ -410,52 +411,55 @@ export default async function AdminOrderDetailPage({ params }: AdminOrderDetailP
             </Card>
           )}
 
-          {/* Chronological Status History */}
-          <Card className="border-slate-200 shadow-sm bg-white">
-            <CardHeader className="pb-3 border-b border-slate-100">
-              <CardTitle className="text-sm font-bold text-slate-900">
-                История изменений статуса
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-4">
-              {order.statusHistory && order.statusHistory.length > 0 ? (
-                <div className="space-y-4">
-                  {order.statusHistory.map((h, i) => (
-                    <div key={h.id || i} className="flex items-start gap-3 text-xs">
-                      <div className="w-2 h-2 rounded-full bg-brand-500 mt-1.5 shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-1">
-                          <span className="font-semibold text-slate-900">
-                            {STATUS_LABELS[h.toStatus] || h.toStatus}
-                          </span>
-                          <span className="text-[10px] text-slate-400 whitespace-nowrap">
-                            {formatDateTime(h.createdAt)}
-                          </span>
-                        </div>
-                        {h.fromStatus && (
-                          <div className="text-[10px] text-slate-400">
-                            Из: {STATUS_LABELS[h.fromStatus] || h.fromStatus}
-                          </div>
-                        )}
-                        {h.comment && (
-                          <p className="mt-1 text-slate-600 bg-slate-50 p-2 rounded border border-slate-100">
-                            {h.comment}
-                          </p>
-                        )}
-                        {h.changedBy && (
-                          <div className="text-[10px] text-slate-400 mt-0.5">
-                            Автор: {h.changedBy.role} ({h.changedBy.email || h.changedBy.phone || 'система'})
-                          </div>
-                        )}
+          {/* Chronological Status History with StatusAccordion */}
+          <StatusAccordion
+            title="История статусов"
+            defaultOpen={false}
+            badge={
+              order.statusHistory && order.statusHistory.length > 0 ? (
+                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                  {order.statusHistory.length}
+                </span>
+              ) : null
+            }
+          >
+            {order.statusHistory && order.statusHistory.length > 0 ? (
+              <div className="space-y-4">
+                {order.statusHistory.map((h, i) => (
+                  <div key={h.id || i} className="flex items-start gap-3 text-xs">
+                    <div className="w-2 h-2 rounded-full bg-brand-500 mt-1.5 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="font-semibold text-slate-900">
+                          {STATUS_LABELS[h.toStatus] || h.toStatus}
+                        </span>
+                        <span className="text-[10px] text-slate-400 whitespace-nowrap">
+                          {formatDateTime(h.createdAt)}
+                        </span>
                       </div>
+                      {h.fromStatus && (
+                        <div className="text-[10px] text-slate-400">
+                          Из: {STATUS_LABELS[h.fromStatus] || h.fromStatus}
+                        </div>
+                      )}
+                      {h.comment && (
+                        <p className="mt-1 text-slate-600 bg-slate-50 p-2 rounded border border-slate-100">
+                          {h.comment}
+                        </p>
+                      )}
+                      {h.changedBy && (
+                        <div className="text-[10px] text-slate-400 mt-0.5">
+                          Автор: {h.changedBy.role} ({h.changedBy.email || h.changedBy.phone || 'система'})
+                        </div>
+                      )}
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-xs text-slate-400">Нет записей истории</p>
-              )}
-            </CardContent>
-          </Card>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-400">Нет записей истории</p>
+            )}
+          </StatusAccordion>
         </div>
       </div>
     </div>

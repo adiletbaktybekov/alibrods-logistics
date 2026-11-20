@@ -12,6 +12,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
+import { StatusAccordion } from '@/components/ui/status-accordion';
 import { OrderStatus } from '@prisma/client';
 
 interface DriverOption {
@@ -382,27 +383,25 @@ export function OrderActions({
         </Card>
       )}
 
-      {/* Manager Controls: Driver Workflow Stage */}
+      {/* Manager Controls: Driver Workflow Stage with StatusAccordion */}
       {assignedDriverId && currentStatus !== OrderStatus.CANCELLED && currentStatus !== OrderStatus.REJECTED_BY_MANAGER && (
-        <Card className="border-indigo-100 shadow-sm bg-gradient-to-br from-white to-indigo-50/20">
-          <CardHeader className="pb-3 border-b border-indigo-100/60 flex flex-row items-center justify-between">
-            <CardTitle className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <span>🚗 Статус водительского этапа</span>
-            </CardTitle>
-            <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
-              {currentStatus === OrderStatus.ASSIGNED_TO_DRIVER && 'Ожидает принятия водителем'}
+        <StatusAccordion
+          title="Статусы"
+          defaultOpen={true}
+          badge={
+            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-brand-50 text-brand-700 border border-brand-200">
+              {currentStatus === OrderStatus.ASSIGNED_TO_DRIVER && 'Назначен водитель'}
               {currentStatus === OrderStatus.ACCEPTED_BY_DRIVER && 'Принят водителем'}
-              {currentStatus === OrderStatus.PICKED_UP && 'Груз забран водителем'}
-              {currentStatus === OrderStatus.IN_TRANSIT && 'В пути на склад'}
-              {currentStatus === OrderStatus.DELIVERED_TO_WAREHOUSE && 'Доставлен на склад'}
-              {currentStatus === OrderStatus.ACCEPTED_BY_MARKETPLACE && 'Принят маркетплейсом'}
-              {currentStatus === OrderStatus.COMPLETED && 'Заявка завершена'}
-              {!['ASSIGNED_TO_DRIVER', 'ACCEPTED_BY_DRIVER', 'PICKED_UP', 'IN_TRANSIT', 'DELIVERED_TO_WAREHOUSE', 'ACCEPTED_BY_MARKETPLACE', 'COMPLETED'].includes(currentStatus) && currentStatus}
+              {currentStatus === OrderStatus.PICKED_UP && 'Груз забран'}
+              {currentStatus === OrderStatus.COMPLETED && 'Завершена'}
+              {!['ASSIGNED_TO_DRIVER', 'ACCEPTED_BY_DRIVER', 'PICKED_UP', 'COMPLETED'].includes(currentStatus) && currentStatus}
             </span>
-          </CardHeader>
-          <CardContent className="pt-4 space-y-3">
+          }
+          className="border-indigo-100 shadow-sm bg-gradient-to-br from-white to-indigo-50/20"
+        >
+          <div className="space-y-3">
             <p className="text-xs text-slate-600">
-              Менеджер может вручную продвинуть этап водителя, если водитель сообщил о выполнении по телефону или возникли сложности с ботом.
+              Менеджер может вручную продвинуть этап водителя или завершить заказ, если возникли сложности со связью.
             </p>
 
             <div className="flex flex-wrap gap-2 pt-1">
@@ -447,17 +446,17 @@ export function OrderActions({
               {currentStatus === OrderStatus.PICKED_UP && (
                 <>
                   <div className="w-full text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-2.5 flex items-center gap-2">
-                    <span>✓ Груз успешно забран у отправителя. Машина готовится к отправке или выехала на склад.</span>
+                    <span>✓ Груз успешно забран у отправителя. Ожидается завершение доставки.</span>
                   </div>
                   <Button
                     type="button"
                     variant="primary"
                     size="sm"
                     disabled={isUpdatingDriverStatus}
-                    onClick={() => handleDriverStatusUpdate(OrderStatus.IN_TRANSIT)}
-                    className="bg-sky-600 hover:bg-sky-700 text-white text-xs"
+                    onClick={() => handleDriverStatusUpdate(OrderStatus.COMPLETED)}
+                    className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold"
                   >
-                    {isUpdatingDriverStatus ? 'Сохранение...' : '🚚 Отметить как «В пути»'}
+                    {isUpdatingDriverStatus ? 'Сохранение...' : '🎉 Завершить заказ («COMPLETED»)'}
                   </Button>
                   <Button
                     type="button"
@@ -472,21 +471,11 @@ export function OrderActions({
                 </>
               )}
 
-              {currentStatus === OrderStatus.IN_TRANSIT && (
+              {currentStatus === OrderStatus.COMPLETED && (
                 <>
-                  <div className="w-full text-xs text-sky-700 bg-sky-50 border border-sky-200 rounded-lg p-2.5 flex items-center gap-2">
-                    <span>🚚 Машина с грузом находится в пути на склад назначения.</span>
+                  <div className="w-full text-xs text-purple-800 bg-purple-50 border border-purple-200 rounded-lg p-2.5 flex items-center gap-2">
+                    <span>🎉 Заявка полностью завершена и закрыта. Все этапы логистики выполнены.</span>
                   </div>
-                  <Button
-                    type="button"
-                    variant="primary"
-                    size="sm"
-                    disabled={isUpdatingDriverStatus}
-                    onClick={() => handleDriverStatusUpdate(OrderStatus.DELIVERED_TO_WAREHOUSE)}
-                    className="bg-amber-600 hover:bg-amber-700 text-white text-xs"
-                  >
-                    {isUpdatingDriverStatus ? 'Сохранение...' : '🏢 Отметить как «Доставлен на склад»'}
-                  </Button>
                   <Button
                     type="button"
                     variant="outline"
@@ -498,68 +487,6 @@ export function OrderActions({
                     ↩️ Вернуть к «Груз забран»
                   </Button>
                 </>
-              )}
-
-              {currentStatus === OrderStatus.DELIVERED_TO_WAREHOUSE && (
-                <>
-                  <div className="w-full text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2.5 flex items-center gap-2">
-                    <span>🏢 Груз прибыл на склад назначения. Ожидает разгрузки и сдачи на ворота.</span>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="primary"
-                    size="sm"
-                    disabled={isUpdatingDriverStatus}
-                    onClick={() => handleDriverStatusUpdate(OrderStatus.ACCEPTED_BY_MARKETPLACE)}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
-                  >
-                    {isUpdatingDriverStatus ? 'Сохранение...' : '📦 Отметить как «Принят маркетплейсом»'}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={isUpdatingDriverStatus}
-                    onClick={() => handleDriverStatusUpdate(OrderStatus.IN_TRANSIT)}
-                    className="text-xs text-slate-600 border-slate-300 hover:bg-slate-50"
-                  >
-                    ↩️ Вернуть к «В пути»
-                  </Button>
-                </>
-              )}
-
-              {currentStatus === OrderStatus.ACCEPTED_BY_MARKETPLACE && (
-                <>
-                  <div className="w-full text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg p-2.5 flex items-center gap-2">
-                    <span>✓ Партия успешно сдана и принята на воротах маркетплейса!</span>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="primary"
-                    size="sm"
-                    disabled={isUpdatingDriverStatus}
-                    onClick={() => handleDriverStatusUpdate(OrderStatus.COMPLETED)}
-                    className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold"
-                  >
-                    {isUpdatingDriverStatus ? 'Сохранение...' : '🎉 Завершить заявку («COMPLETED»)'}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={isUpdatingDriverStatus}
-                    onClick={() => handleDriverStatusUpdate(OrderStatus.DELIVERED_TO_WAREHOUSE)}
-                    className="text-xs text-slate-600 border-slate-300 hover:bg-slate-50"
-                  >
-                    ↩️ Вернуть к «Доставлен на склад»
-                  </Button>
-                </>
-              )}
-
-              {currentStatus === OrderStatus.COMPLETED && (
-                <div className="w-full text-xs text-purple-800 bg-purple-50 border border-purple-200 rounded-lg p-2.5 flex items-center gap-2">
-                  <span>🎉 Заявка полностью завершена и закрыта. Все этапы логистики выполнены.</span>
-                </div>
               )}
             </div>
 
@@ -594,8 +521,8 @@ export function OrderActions({
                 </div>
               )}
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </StatusAccordion>
       )}
 
 

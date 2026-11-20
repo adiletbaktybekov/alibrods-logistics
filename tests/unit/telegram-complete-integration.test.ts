@@ -200,18 +200,12 @@ describe('AliBros Logistics: Complete Telegram 3-Bot Integration Unit Tests', ()
         OrderStatus.PICKED_UP,
       ]);
       expect(DRIVER_ALLOWED_TRANSITIONS[OrderStatus.PICKED_UP]).toEqual([
-        OrderStatus.IN_TRANSIT,
-      ]);
-      expect(DRIVER_ALLOWED_TRANSITIONS[OrderStatus.IN_TRANSIT]).toEqual([
-        OrderStatus.DELIVERED_TO_WAREHOUSE,
-      ]);
-      expect(DRIVER_ALLOWED_TRANSITIONS[OrderStatus.DELIVERED_TO_WAREHOUSE]).toEqual([
-        OrderStatus.ACCEPTED_BY_MARKETPLACE,
+        OrderStatus.COMPLETED,
       ]);
 
       // Forbidden jumps
       expect(DRIVER_ALLOWED_TRANSITIONS[OrderStatus.ASSIGNED_TO_DRIVER]).not.toContain(
-        OrderStatus.DELIVERED_TO_WAREHOUSE
+        OrderStatus.COMPLETED
       );
     });
 

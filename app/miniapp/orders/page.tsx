@@ -38,16 +38,12 @@ export default async function MiniAppOrdersPage({ searchParams }: MiniAppOrdersP
     if (currentTab === 'processing') {
       return (
         order.status !== OrderStatus.COMPLETED &&
-        order.status !== OrderStatus.ACCEPTED_BY_MARKETPLACE &&
         order.status !== OrderStatus.CANCELLED &&
         order.status !== OrderStatus.REJECTED_BY_MANAGER
       );
     }
     if (currentTab === 'completed') {
-      return (
-        order.status === OrderStatus.COMPLETED ||
-        order.status === OrderStatus.ACCEPTED_BY_MARKETPLACE
-      );
+      return order.status === OrderStatus.COMPLETED;
     }
     return true;
   });

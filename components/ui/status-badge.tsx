@@ -2,6 +2,30 @@ import * as React from 'react';
 import { OrderStatus } from '@prisma/client';
 import { Badge } from '@/components/ui/badge';
 
+export const ACTIVE_ORDER_STATUSES: OrderStatus[] = [
+  OrderStatus.CREATED,
+  OrderStatus.PENDING_CONFIRMATION,
+  OrderStatus.CONFIRMED,
+  OrderStatus.ASSIGNED_TO_DRIVER,
+  OrderStatus.ACCEPTED_BY_DRIVER,
+  OrderStatus.PICKED_UP,
+  OrderStatus.COMPLETED,
+  OrderStatus.REJECTED_BY_MANAGER,
+  OrderStatus.CANCELLED,
+];
+
+export const ACTIVE_STATUS_LABELS: Record<string, string> = {
+  [OrderStatus.CREATED]: 'Создана',
+  [OrderStatus.PENDING_CONFIRMATION]: 'Ожидает подтверждения',
+  [OrderStatus.CONFIRMED]: 'Подтверждена',
+  [OrderStatus.ASSIGNED_TO_DRIVER]: 'Назначен водитель',
+  [OrderStatus.ACCEPTED_BY_DRIVER]: 'Водитель принял заявку',
+  [OrderStatus.PICKED_UP]: 'Забрана у клиента',
+  [OrderStatus.COMPLETED]: 'Завершена',
+  [OrderStatus.REJECTED_BY_MANAGER]: 'Отклонена менеджером',
+  [OrderStatus.CANCELLED]: 'Отменена',
+};
+
 export const STATUS_LABELS: Record<OrderStatus, string> = {
   DRAFT: 'Черновик',
   CREATED: 'Создана',

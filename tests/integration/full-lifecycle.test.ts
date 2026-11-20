@@ -192,28 +192,19 @@ describe('Phase 8: End-to-End Full Order Lifecycle & System Integration', () => 
         OrderStatus.PICKED_UP,
       ]);
       expect(DRIVER_ALLOWED_TRANSITIONS[OrderStatus.PICKED_UP]).toEqual([
-        OrderStatus.IN_TRANSIT,
+        OrderStatus.COMPLETED,
       ]);
-      expect(DRIVER_ALLOWED_TRANSITIONS[OrderStatus.IN_TRANSIT]).toEqual([
-        OrderStatus.DELIVERED_TO_WAREHOUSE,
-      ]);
-      expect(DRIVER_ALLOWED_TRANSITIONS[OrderStatus.DELIVERED_TO_WAREHOUSE]).toEqual([
-        OrderStatus.ACCEPTED_BY_MARKETPLACE,
-      ]);
-      // Driver cannot complete or change after marketplace acceptance
-      expect(DRIVER_ALLOWED_TRANSITIONS[OrderStatus.ACCEPTED_BY_MARKETPLACE]).toEqual([]);
+      // Driver cannot change after COMPLETED
+      expect(DRIVER_ALLOWED_TRANSITIONS[OrderStatus.COMPLETED]).toEqual([]);
     });
 
-    it('should forbid driver from jumping stages (e.g. from ACCEPTED to DELIVERED)', () => {
+    it('should forbid driver from jumping stages (e.g. from ACCEPTED to COMPLETED)', () => {
       const allowedFromAccepted = DRIVER_ALLOWED_TRANSITIONS[OrderStatus.ACCEPTED_BY_DRIVER];
-      expect(allowedFromAccepted.includes(OrderStatus.DELIVERED_TO_WAREHOUSE)).toBe(false);
       expect(allowedFromAccepted.includes(OrderStatus.COMPLETED)).toBe(false);
     });
 
-    it('should forbid driver from transitioning order directly to COMPLETED', () => {
-      Object.values(DRIVER_ALLOWED_TRANSITIONS).forEach((targets) => {
-        expect(targets.includes(OrderStatus.COMPLETED)).toBe(false);
-      });
+    it('should forbid driver from transitioning ASSIGNED order directly to COMPLETED', () => {
+      expect(DRIVER_ALLOWED_TRANSITIONS[OrderStatus.ASSIGNED_TO_DRIVER].includes(OrderStatus.COMPLETED)).toBe(false);
     });
   });
 

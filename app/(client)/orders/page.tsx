@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { getClientOrders } from '@/app/actions/orders';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { StatusBadge, STATUS_LABELS } from '@/components/ui/status-badge';
+import { StatusBadge, ACTIVE_STATUS_LABELS } from '@/components/ui/status-badge';
 import { formatDateTime } from '@/lib/utils';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { OrderStatus } from '@prisma/client';
@@ -68,7 +68,7 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
               className="flex h-10 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
             >
               <option value="">Все статусы</option>
-              {Object.entries(STATUS_LABELS).map(([code, label]) => (
+              {Object.entries(ACTIVE_STATUS_LABELS).map(([code, label]) => (
                 <option key={code} value={code}>
                   {label}
                 </option>

@@ -575,13 +575,11 @@ export class OrdersService {
       OrderStatus.ASSIGNED_TO_DRIVER,
       OrderStatus.ACCEPTED_BY_DRIVER,
       OrderStatus.PICKED_UP,
-      OrderStatus.IN_TRANSIT,
-      OrderStatus.DELIVERED_TO_WAREHOUSE,
     ];
 
     const completedStatuses: OrderStatus[] = [
-      OrderStatus.ACCEPTED_BY_MARKETPLACE,
       OrderStatus.COMPLETED,
+      OrderStatus.ACCEPTED_BY_MARKETPLACE,
     ];
 
     const [total, inProcessing, completed, recentOrders] = await Promise.all([
@@ -631,13 +629,14 @@ export class OrdersService {
       );
     }
 
-    // Completion rule: COMPLETED must only come from ACCEPTED_BY_MARKETPLACE
+    // Completion rule: COMPLETED must only come from PICKED_UP (or legacy ACCEPTED_BY_MARKETPLACE)
     if (
       dto.status === OrderStatus.COMPLETED &&
+      existing.status !== OrderStatus.PICKED_UP &&
       existing.status !== OrderStatus.ACCEPTED_BY_MARKETPLACE
     ) {
       throw new ValidationError(
-        `Завершить заявку можно только после фактической сдачи маркетплейсу (текущий статус: ${existing.status})`
+        `Завершить заявку можно только после забора груза у клиента (текущий статус: ${existing.status})`
       );
     }
 
@@ -646,7 +645,7 @@ export class OrdersService {
         where: { id: orderId },
         data: {
           status: dto.status,
-          ...(dto.status === OrderStatus.DELIVERED_TO_WAREHOUSE ? { deliveredAt: new Date() } : {}),
+          ...(dto.status === OrderStatus.COMPLETED && !existing.deliveredAt ? { deliveredAt: new Date() } : {}),
         },
       });
 
@@ -1029,12 +1028,10 @@ export class OrdersService {
         OrderStatus.ASSIGNED_TO_DRIVER,
         OrderStatus.ACCEPTED_BY_DRIVER,
         OrderStatus.PICKED_UP,
-        OrderStatus.IN_TRANSIT,
-        OrderStatus.DELIVERED_TO_WAREHOUSE,
       ];
       const completedStatuses: OrderStatus[] = [
-        OrderStatus.ACCEPTED_BY_MARKETPLACE,
         OrderStatus.COMPLETED,
+        OrderStatus.ACCEPTED_BY_MARKETPLACE,
       ];
       const rejectedStatuses: OrderStatus[] = [
         OrderStatus.REJECTED_BY_MANAGER,
@@ -1130,7 +1127,7 @@ export class OrdersService {
         { status: OrderStatus.CREATED, label: 'Новые', count: created, color: 'bg-sky-500' },
         { status: OrderStatus.PENDING_CONFIRMATION, label: 'Ожидают', count: pendingConfirmation, color: 'bg-amber-500' },
         { status: OrderStatus.CONFIRMED, label: 'Подтверждены', count: confirmed, color: 'bg-indigo-500' },
-        { status: OrderStatus.IN_TRANSIT, label: 'В доставке', count: inDelivery, color: 'bg-blue-600' },
+        { status: OrderStatus.PICKED_UP, label: 'В доставке', count: inDelivery, color: 'bg-blue-600' },
         { status: OrderStatus.COMPLETED, label: 'Завершены', count: completed, color: 'bg-emerald-500' },
         { status: OrderStatus.REJECTED_BY_MANAGER, label: 'Отклонены', count: rejected, color: 'bg-rose-500' },
       ];
@@ -1274,9 +1271,6 @@ export class OrdersService {
       OrderStatus.ASSIGNED_TO_DRIVER,
       OrderStatus.ACCEPTED_BY_DRIVER,
       OrderStatus.PICKED_UP,
-      OrderStatus.IN_TRANSIT,
-      OrderStatus.DELIVERED_TO_WAREHOUSE,
-      OrderStatus.ACCEPTED_BY_MARKETPLACE,
       OrderStatus.COMPLETED,
     ];
 
@@ -1306,12 +1300,6 @@ export class OrdersService {
         ? 'Водитель принял заказ (установлено менеджером)'
         : targetStatus === OrderStatus.PICKED_UP
         ? 'Водитель забрал груз (установлено менеджером)'
-        : targetStatus === OrderStatus.IN_TRANSIT
-        ? 'Груз в пути (установлено менеджером)'
-        : targetStatus === OrderStatus.DELIVERED_TO_WAREHOUSE
-        ? 'Груз доставлен на склад (установлено менеджером)'
-        : targetStatus === OrderStatus.ACCEPTED_BY_MARKETPLACE
-        ? 'Груз принят маркетплейсом (установлено менеджером)'
         : targetStatus === OrderStatus.COMPLETED
         ? 'Заявка закрыта и успешно выполнена (установлено менеджером)'
         : 'Возврат к этапу назначения водителя (установлено менеджером)';
@@ -1321,11 +1309,7 @@ export class OrdersService {
     const updated = await prisma.$transaction(async (tx) => {
       const orderUpdateData: Record<string, any> = { status: targetStatus };
 
-      if (
-        targetStatus === OrderStatus.DELIVERED_TO_WAREHOUSE ||
-        targetStatus === OrderStatus.ACCEPTED_BY_MARKETPLACE ||
-        targetStatus === OrderStatus.COMPLETED
-      ) {
+      if (targetStatus === OrderStatus.COMPLETED) {
         if (!order.deliveredAt) {
           orderUpdateData.deliveredAt = new Date();
         }
@@ -1340,12 +1324,7 @@ export class OrdersService {
         let assignmentStatus: AssignmentStatus = AssignmentStatus.ASSIGNED;
         if (targetStatus === OrderStatus.ACCEPTED_BY_DRIVER) {
           assignmentStatus = AssignmentStatus.ACCEPTED;
-        } else if (
-          targetStatus === OrderStatus.PICKED_UP ||
-          targetStatus === OrderStatus.IN_TRANSIT ||
-          targetStatus === OrderStatus.DELIVERED_TO_WAREHOUSE ||
-          targetStatus === OrderStatus.ACCEPTED_BY_MARKETPLACE
-        ) {
+        } else if (targetStatus === OrderStatus.PICKED_UP) {
           assignmentStatus = AssignmentStatus.IN_PROGRESS;
         } else if (targetStatus === OrderStatus.COMPLETED) {
           assignmentStatus = AssignmentStatus.COMPLETED;
@@ -1701,12 +1680,10 @@ export class OrdersService {
       OrderStatus.ASSIGNED_TO_DRIVER,
       OrderStatus.ACCEPTED_BY_DRIVER,
       OrderStatus.PICKED_UP,
-      OrderStatus.IN_TRANSIT,
-      OrderStatus.DELIVERED_TO_WAREHOUSE,
     ];
     const completedStatuses: OrderStatus[] = [
-      OrderStatus.ACCEPTED_BY_MARKETPLACE,
       OrderStatus.COMPLETED,
+      OrderStatus.ACCEPTED_BY_MARKETPLACE,
     ];
 
     const marketCounts = {

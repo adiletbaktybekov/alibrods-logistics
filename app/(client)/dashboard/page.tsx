@@ -79,7 +79,7 @@ export default async function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-extrabold text-amber-600">{stats.inProcessing}</div>
-            <p className="text-xs text-slate-500 mt-1">Приёмка, погрузка, рейс или сдача на склад</p>
+            <p className="text-xs text-slate-500 mt-1">Ожидание, погрузка и доставка</p>
           </CardContent>
         </Card>
 
@@ -91,7 +91,7 @@ export default async function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-extrabold text-emerald-600">{stats.completed}</div>
-            <p className="text-xs text-slate-500 mt-1">Успешно приняты маркетплейсом</p>
+            <p className="text-xs text-slate-500 mt-1">Успешно выполненные доставки</p>
           </CardContent>
         </Card>
       </div>

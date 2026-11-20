@@ -5,6 +5,7 @@ import { getOrderDetail } from '@/app/actions/orders';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { StatusBadge, STATUS_LABELS } from '@/components/ui/status-badge';
+import { StatusAccordion } from '@/components/ui/status-accordion';
 import { Badge } from '@/components/ui/badge';
 import { formatDateTime } from '@/lib/utils';
 import { formatPhoneNumber } from '@/lib/phone';
@@ -407,46 +408,47 @@ export default async function OrderDetailPage({ params }: OrderDetailPageProps) 
 
         {/* Right Column: Status Change History Timeline */}
         <div className="lg:col-span-5 space-y-6">
-          <Card className="border-slate-200 shadow-sm bg-white">
-            <CardHeader className="pb-3 border-b border-slate-100">
-              <CardTitle className="text-sm font-bold text-slate-900">История движения заявки</CardTitle>
-            </CardHeader>
-            <CardContent className="pt-4">
-              {order.statusHistory && order.statusHistory.length > 0 ? (
-                <ol className="relative border-l border-slate-200 ml-3 space-y-6 py-2">
-                  {order.statusHistory.map((history, idx) => (
-                    <li key={history.id} className="ml-6">
-                      <span className="absolute -left-2.5 flex h-5 w-5 items-center justify-center rounded-full bg-white ring-4 ring-white border-2 border-brand-600">
-                        <span className="h-2 w-2 rounded-full bg-brand-600" />
+          {/* Status Change History with StatusAccordion */}
+          <StatusAccordion
+            title="Статусы"
+            subtitle="История движения"
+            defaultOpen={true}
+            badge={<StatusBadge status={order.status} className="text-[10px]" />}
+          >
+            {order.statusHistory && order.statusHistory.length > 0 ? (
+              <ol className="relative border-l border-slate-200 ml-3 space-y-6 py-2">
+                {order.statusHistory.map((history, idx) => (
+                  <li key={history.id} className="ml-6">
+                    <span className="absolute -left-2.5 flex h-5 w-5 items-center justify-center rounded-full bg-white ring-4 ring-white border-2 border-brand-600">
+                      <span className="h-2 w-2 rounded-full bg-brand-600" />
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-xs text-slate-900">
+                        {STATUS_LABELS[history.toStatus] || history.toStatus}
                       </span>
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-xs text-slate-900">
-                          {STATUS_LABELS[history.toStatus] || history.toStatus}
+                      {idx === 0 && (
+                        <span className="text-[10px] bg-brand-100 text-brand-800 font-bold px-1.5 py-0.2 rounded">
+                          Текущий
                         </span>
-                        {idx === 0 && (
-                          <span className="text-[10px] bg-brand-100 text-brand-800 font-bold px-1.5 py-0.2 rounded">
-                            Текущий
-                          </span>
-                        )}
-                      </div>
-                      <time className="block text-[11px] text-slate-500 mt-0.5">
-                        {formatDateTime(history.createdAt)}
-                      </time>
-                      {history.comment && (
-                        <p className="mt-1 text-xs text-slate-600 bg-slate-50 p-2 rounded border border-slate-100">
-                          {history.comment}
-                        </p>
                       )}
-                    </li>
-                  ))}
-                </ol>
-              ) : (
-                <div className="text-center py-6 text-xs text-slate-500">
-                  История изменений пока пуста
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                    </div>
+                    <time className="block text-[11px] text-slate-500 mt-0.5">
+                      {formatDateTime(history.createdAt)}
+                    </time>
+                    {history.comment && (
+                      <p className="mt-1 text-xs text-slate-600 bg-slate-50 p-2 rounded border border-slate-100">
+                        {history.comment}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <div className="text-center py-4 text-xs text-slate-500">
+                История изменений пока пуста
+              </div>
+            )}
+          </StatusAccordion>
         </div>
       </div>
     </div>

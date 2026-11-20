@@ -12,16 +12,15 @@ describe('Simplified Driver Workflow (Accept -> Picked up -> History)', () => {
 
   it('defines completed driver history statuses starting from PICKED_UP', () => {
     expect(DriverOrderService.COMPLETED_DRIVER_STATUSES).toContain(OrderStatus.PICKED_UP);
-    expect(DriverOrderService.COMPLETED_DRIVER_STATUSES).toContain(OrderStatus.IN_TRANSIT);
-    expect(DriverOrderService.COMPLETED_DRIVER_STATUSES).toContain(OrderStatus.DELIVERED_TO_WAREHOUSE);
     expect(DriverOrderService.COMPLETED_DRIVER_STATUSES).toContain(OrderStatus.COMPLETED);
+    expect(DriverOrderService.COMPLETED_DRIVER_STATUSES).not.toContain('IN_TRANSIT');
+    expect(DriverOrderService.COMPLETED_DRIVER_STATUSES).not.toContain('DELIVERED_TO_WAREHOUSE');
   });
 
   it('verifies that PICKED_UP leaves order under manager control without prematurely completing the order globally', () => {
     // A picked up order must NOT automatically jump to COMPLETED
     const orderStatusAfterDriverPickedUp = OrderStatus.PICKED_UP;
     expect(orderStatusAfterDriverPickedUp).not.toBe(OrderStatus.COMPLETED);
-    expect(orderStatusAfterDriverPickedUp).not.toBe(OrderStatus.ACCEPTED_BY_MARKETPLACE);
   });
 
   it('verifies callback routing for 2 simplified buttons', () => {

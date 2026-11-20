@@ -646,10 +646,7 @@ export class NotificationDispatcherService {
         if (clientTg?.telegramId) {
           const statusDescriptions: Partial<Record<OrderStatus, string>> = {
             [OrderStatus.ACCEPTED_BY_DRIVER]: 'Водитель принял рейс в работу и выехал на забор груза.',
-            [OrderStatus.PICKED_UP]: 'Груз забран у селлера. Подготовка к транспортировке на склад.',
-            [OrderStatus.IN_TRANSIT]: `Машина с грузом в пути на склад назначения (${getOrderWarehouseName(order)}).`,
-            [OrderStatus.DELIVERED_TO_WAREHOUSE]: `Груз доставлен на склад назначения (${getOrderWarehouseName(order)}). Ожидание разгрузки.`,
-            [OrderStatus.ACCEPTED_BY_MARKETPLACE]: 'Партия успешно сдана и принята на воротах склада!',
+            [OrderStatus.PICKED_UP]: 'Груз забран у селлера. Доставка выполняется.',
             [OrderStatus.COMPLETED]: 'Услуга доставки оказана в полном объёме. Заявка закрыта.',
             [OrderStatus.REJECTED_BY_MANAGER]: comment ? `Заявка отклонена: ${comment}` : 'Заявка отклонена менеджером.',
           };
@@ -678,7 +675,7 @@ export class NotificationDispatcherService {
 
       // 3. Strict Requirement 2:
       // The AliBros shipping group topic (#8) receives ONLY the initial confirmed order card upon manager approval.
-      // All subsequent lifecycle and driver events (DRIVER_ACCEPTED, PICKED_UP, IN_TRANSIT, DELIVERED, COMPLETED)
+      // All subsequent lifecycle and driver events (DRIVER_ACCEPTED, PICKED_UP, COMPLETED)
       // are NEVER dispatched to the group chat. The initial confirmed card remains clean and standalone.
 
       logger.info(
