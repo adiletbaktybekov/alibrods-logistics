@@ -110,6 +110,7 @@ export async function getAdminOrdersAction(params: GetAdminOrdersParams = {}) {
             include: {
               driver: true,
             },
+            orderBy: { createdAt: 'desc' },
           },
         },
       }),
@@ -883,6 +884,50 @@ export async function updateDriverWorkflowStatusAction(
     return {
       success: false,
       error: err instanceof Error ? err.message : 'Не удалось обновить статус водительского этапа',
+    };
+  }
+}
+
+export async function updateOrderStatusFromListAction(
+  orderId: string,
+  targetStatus: OrderStatus,
+  options?: {
+    expectedCurrentStatus?: OrderStatus;
+    comment?: string;
+  }
+): Promise<{
+  success: boolean;
+  status?: OrderStatus;
+  changed?: boolean;
+  error?: string;
+}> {
+  try {
+    const user = await requireStaffUser();
+    const result = await OrdersService.updateOrderStatusByStaff(user, orderId, targetStatus, {
+      expectedCurrentStatus: options?.expectedCurrentStatus,
+      comment: options?.comment,
+    });
+
+    if (result.changed) {
+      revalidatePath('/admin/orders');
+      revalidatePath('/admin');
+      revalidatePath(`/admin/orders/${orderId}`);
+      revalidatePath('/orders');
+      revalidatePath('/dashboard');
+      revalidatePath(`/orders/${orderId}`);
+      revalidatePath('/miniapp/orders');
+      revalidatePath(`/miniapp/orders/${orderId}`);
+    }
+
+    return {
+      success: true,
+      status: result.order.status,
+      changed: result.changed,
+    };
+  } catch (err: unknown) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Не удалось изменить статус заявки',
     };
   }
 }

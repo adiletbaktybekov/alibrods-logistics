@@ -22,6 +22,12 @@ import {
 import { NotificationDispatcherService } from '@/modules/notifications/dispatcher.service';
 import { GoogleSheetsSyncService } from '@/modules/integrations/google-sheets-sync.service';
 import { IdempotencyService } from '@/lib/security/idempotency.service';
+import {
+  ACTIVE_ORDER_STATUSES,
+  ACTIVE_STATUS_LABELS,
+  STATUS_LABELS,
+  getAllowedStatusTransitions,
+} from '@/components/ui/status-badge';
 
 import { siteConfig } from '@/config/site';
 
@@ -1389,6 +1395,243 @@ export class OrdersService {
     ).catch(() => {});
 
     return updated;
+  }
+
+  /**
+   * Updates an order status directly from the admin orders list by authorized staff.
+   * Enforces role permissions, active statuses, allowed state transitions, row-level concurrency control,
+   * assignment synchronization, status history, audit log, Google Sheets sync, and Telegram/In-App notifications.
+   * No-op without notifications if the target status matches the current status.
+   */
+  public static async updateOrderStatusByStaff(
+    user: AuthenticatedUser,
+    orderId: string,
+    targetStatus: OrderStatus,
+    options?: {
+      comment?: string;
+      expectedCurrentStatus?: OrderStatus;
+      ipAddress?: string;
+    }
+  ) {
+    if (!['SUPER_ADMIN', 'ADMIN', 'MANAGER'].includes(user.role)) {
+      throw new ForbiddenError('Только менеджеры и администраторы могут изменять статус заявки');
+    }
+
+    if (!ACTIVE_ORDER_STATUSES.includes(targetStatus)) {
+      throw new ValidationError(`Недопустимый статус заявки: ${targetStatus}`);
+    }
+
+    const trimmedComment = options?.comment?.trim() || '';
+
+    const txResult = await prisma.$transaction(async (tx) => {
+      if (process.env.DATABASE_URL) {
+        try {
+          await tx.$queryRaw`
+            SELECT id, status FROM "orders" WHERE id = ${orderId} FOR UPDATE
+          `;
+        } catch {
+          // Proceed gracefully under mocked or non-PG test environments
+        }
+      }
+
+      const order = await tx.order.findUnique({
+        where: { id: orderId },
+        include: {
+          assignments: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+          },
+        },
+      });
+
+      if (!order) {
+        throw new NotFoundError('Order', orderId);
+      }
+
+      const previousStatus = order.status;
+
+      // No-op if selecting the exact same status (prevents duplicate notifications/writes)
+      if (previousStatus === targetStatus) {
+        return {
+          order,
+          previousStatus,
+          changed: false,
+          activeAssignmentId: order.assignments?.[0]?.id || null,
+        };
+      }
+
+      // Optimistic concurrency protection against conflicting changes from another session
+      if (options?.expectedCurrentStatus && previousStatus !== options.expectedCurrentStatus) {
+        const currentLabel = STATUS_LABELS[previousStatus] || previousStatus;
+        throw new ValidationError(
+          `Статус заявки уже был изменён другим сотрудником (текущий статус: «${currentLabel}»). Обновите список.`
+        );
+      }
+
+      const activeAssignment = order.assignments?.[0];
+      const hasAssignedDriver = Boolean(
+        activeAssignment && activeAssignment.status !== AssignmentStatus.CANCELLED
+      );
+
+      const allowedTargets = getAllowedStatusTransitions(previousStatus, { hasAssignedDriver });
+      if (!allowedTargets.includes(targetStatus)) {
+        const fromLabel = STATUS_LABELS[previousStatus] || previousStatus;
+        const toLabel = STATUS_LABELS[targetStatus] || targetStatus;
+        throw new ValidationError(
+          `Недопустимый переход статуса из «${fromLabel}» в «${toLabel}»`
+        );
+      }
+
+      const targetLabel = ACTIVE_STATUS_LABELS[targetStatus] || STATUS_LABELS[targetStatus] || targetStatus;
+      const defaultComment =
+        targetStatus === OrderStatus.REJECTED_BY_MANAGER
+          ? `Отклонено менеджером.${trimmedComment ? ` Причина: ${trimmedComment}` : ''}`
+          : targetStatus === OrderStatus.CONFIRMED
+          ? 'Заявка подтверждена менеджером из списка'
+          : `Статус изменён менеджером на «${targetLabel}»`;
+
+      const historyComment =
+        targetStatus === OrderStatus.REJECTED_BY_MANAGER
+          ? defaultComment
+          : trimmedComment
+          ? `${defaultComment}. Примечание: ${trimmedComment}`
+          : defaultComment;
+
+      const orderUpdateData: Record<string, unknown> = {
+        status: targetStatus,
+      };
+
+      if (targetStatus === OrderStatus.COMPLETED && !order.deliveredAt) {
+        orderUpdateData.deliveredAt = new Date();
+      }
+
+      const updatedOrder = await tx.order.update({
+        where: { id: orderId },
+        data: orderUpdateData,
+      });
+
+      // Synchronize latest driver assignment state if present
+      if (activeAssignment) {
+        let assignmentStatus: AssignmentStatus | null = null;
+        if (targetStatus === OrderStatus.ASSIGNED_TO_DRIVER) {
+          assignmentStatus = AssignmentStatus.ASSIGNED;
+        } else if (targetStatus === OrderStatus.ACCEPTED_BY_DRIVER) {
+          assignmentStatus = AssignmentStatus.ACCEPTED;
+        } else if (targetStatus === OrderStatus.PICKED_UP) {
+          assignmentStatus = AssignmentStatus.IN_PROGRESS;
+        } else if (targetStatus === OrderStatus.COMPLETED) {
+          assignmentStatus = AssignmentStatus.COMPLETED;
+        } else if (
+          targetStatus === OrderStatus.CANCELLED ||
+          targetStatus === OrderStatus.REJECTED_BY_MANAGER ||
+          (previousStatus === OrderStatus.ASSIGNED_TO_DRIVER && targetStatus === OrderStatus.CONFIRMED)
+        ) {
+          assignmentStatus = AssignmentStatus.CANCELLED;
+        }
+
+        if (assignmentStatus) {
+          const assignmentUpdateData: Record<string, unknown> = {
+            status: assignmentStatus,
+          };
+          if (
+            (targetStatus === OrderStatus.ACCEPTED_BY_DRIVER ||
+              targetStatus === OrderStatus.PICKED_UP ||
+              targetStatus === OrderStatus.COMPLETED) &&
+            !activeAssignment.acceptedAt
+          ) {
+            assignmentUpdateData.acceptedAt = new Date();
+          }
+          if (targetStatus === OrderStatus.COMPLETED && !activeAssignment.completedAt) {
+            assignmentUpdateData.completedAt = new Date();
+          }
+
+          await tx.orderAssignment.update({
+            where: { id: activeAssignment.id },
+            data: assignmentUpdateData,
+          });
+        }
+      }
+
+      await tx.orderStatusHistory.create({
+        data: {
+          orderId,
+          fromStatus: previousStatus,
+          toStatus: targetStatus,
+          changedById: user.id,
+          comment: historyComment,
+        },
+      });
+
+      return {
+        order: updatedOrder,
+        previousStatus,
+        changed: true,
+        historyComment,
+        activeAssignmentId: activeAssignment?.id || null,
+      };
+    });
+
+    if (!txResult.changed) {
+      return { order: txResult.order, changed: false };
+    }
+
+    await AuditService.log({
+      userId: user.id,
+      action: AuditAction.STATUS_CHANGE,
+      resource: 'Order',
+      resourceId: orderId,
+      oldValue: { status: txResult.previousStatus },
+      newValue: { status: targetStatus },
+      metadata: {
+        source: 'ADMIN_ORDERS_LIST',
+        comment: trimmedComment || null,
+        assignmentId: txResult.activeAssignmentId,
+      },
+      ipAddress: options?.ipAddress,
+    });
+
+    // Sync to Google Sheets (non-blocking)
+    GoogleSheetsSyncService.syncOrder(orderId).catch((sheetsErr) => {
+      logger.error({ err: sheetsErr, orderId, targetStatus }, 'Failed to sync inline status change to Google Sheets');
+    });
+
+    // Dispatch notifications according to existing business rules:
+    // - Confirming from pre-confirmed stage dispatches the single ORDER_CONFIRMED card to shipping group topic #8
+    // - Rejecting notifies manager group and client
+    // - Other transitions notify client (In-App + Client Bot) while keeping shipping group topic #8 silent
+    if (
+      targetStatus === OrderStatus.CONFIRMED &&
+      txResult.previousStatus !== OrderStatus.ASSIGNED_TO_DRIVER
+    ) {
+      NotificationDispatcherService.notifyOrderConfirmed(orderId, txResult.historyComment).catch(() => {});
+      NotificationDispatcherService.notifyStatusChanged(
+        orderId,
+        txResult.previousStatus,
+        targetStatus,
+        user.id,
+        trimmedComment || undefined
+      ).catch(() => {});
+    } else if (targetStatus === OrderStatus.REJECTED_BY_MANAGER) {
+      const reason = trimmedComment || 'Отклонено менеджером из списка заявок';
+      NotificationDispatcherService.notifyOrderRejected(orderId, reason).catch(() => {});
+      NotificationDispatcherService.notifyStatusChanged(
+        orderId,
+        txResult.previousStatus,
+        targetStatus,
+        user.id,
+        reason
+      ).catch(() => {});
+    } else {
+      NotificationDispatcherService.notifyStatusChanged(
+        orderId,
+        txResult.previousStatus,
+        targetStatus,
+        user.id,
+        trimmedComment || undefined
+      ).catch(() => {});
+    }
+
+    return { order: txResult.order, changed: true };
   }
 
   /**

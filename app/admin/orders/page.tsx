@@ -1,11 +1,13 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { getAdminOrdersAction } from '@/app/actions/admin';
+import { getAdminOrdersAction, getAdminDashboardStatsAction } from '@/app/actions/admin';
+import { getCurrentUser } from '@/app/actions/auth';
 import { WarehousesService, WarehouseItem } from '@/modules/warehouses/warehouses.service';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { StatusBadge, ACTIVE_STATUS_LABELS } from '@/components/ui/status-badge';
+import { ACTIVE_STATUS_LABELS } from '@/components/ui/status-badge';
+import { AdminOrderStatusDropdown } from '@/components/admin/admin-order-status-dropdown';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { formatDateTime } from '@/lib/utils';
@@ -16,6 +18,7 @@ import { isExpectedAuthError } from '@/lib/errors';
 
 type AdminOrdersResult = Awaited<ReturnType<typeof getAdminOrdersAction>>;
 type AdminOrderItem = AdminOrdersResult['items'][number];
+type AdminDashboardStats = Awaited<ReturnType<typeof getAdminDashboardStatsAction>>;
 
 export const dynamic = 'force-dynamic';
 
@@ -44,9 +47,11 @@ export default async function AdminOrdersPage({ searchParams }: AdminOrdersPageP
   let pageSize = 25;
   let totalPages = 1;
   let warehouses: WarehouseItem[] = [];
+  let canChangeStatus = false;
+  let stats: AdminDashboardStats | null = null;
 
   try {
-    const [ordersResult, whList] = await Promise.all([
+    const [ordersResult, whList, currentUser, dashboardStats] = await Promise.all([
       getAdminOrdersAction({
         search: search || undefined,
         status: status || undefined,
@@ -56,6 +61,8 @@ export default async function AdminOrdersPage({ searchParams }: AdminOrdersPageP
         pageSize: 25,
       }),
       WarehousesService.list(),
+      getCurrentUser(),
+      getAdminDashboardStatsAction(),
     ]);
     items = ordersResult.items;
     total = ordersResult.total;
@@ -63,6 +70,10 @@ export default async function AdminOrdersPage({ searchParams }: AdminOrdersPageP
     pageSize = ordersResult.pageSize;
     totalPages = ordersResult.totalPages;
     warehouses = whList;
+    canChangeStatus = Boolean(
+      currentUser && ['SUPER_ADMIN', 'ADMIN', 'MANAGER'].includes(currentUser.role)
+    );
+    stats = dashboardStats;
   } catch (err: unknown) {
     if (isExpectedAuthError(err)) {
       redirect('/login');
@@ -107,6 +118,80 @@ export default async function AdminOrdersPage({ searchParams }: AdminOrdersPageP
           )}
         </div>
       </div>
+
+      {/* Live Status Counters */}
+      {stats && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+          <Link
+            href="/admin/orders"
+            className={`rounded-xl border px-3 py-2.5 bg-white shadow-sm transition-colors hover:border-brand-300 ${
+              !status ? 'border-brand-400 ring-1 ring-brand-200' : 'border-slate-200'
+            }`}
+          >
+            <div className="text-[11px] font-medium text-slate-500">Все заявки</div>
+            <div className="text-lg font-bold text-slate-900 mt-0.5">{stats.total}</div>
+          </Link>
+          <Link
+            href="/admin/orders?status=CREATED"
+            className={`rounded-xl border px-3 py-2.5 bg-white shadow-sm transition-colors hover:border-amber-300 ${
+              status === OrderStatus.CREATED || status === OrderStatus.PENDING_CONFIRMATION
+                ? 'border-amber-400 ring-1 ring-amber-200'
+                : 'border-slate-200'
+            }`}
+          >
+            <div className="text-[11px] font-medium text-amber-700">Новые / ожидают</div>
+            <div className="text-lg font-bold text-amber-900 mt-0.5">
+              {stats.created + stats.pendingConfirmation}
+            </div>
+          </Link>
+          <Link
+            href="/admin/orders?status=CONFIRMED"
+            className={`rounded-xl border px-3 py-2.5 bg-white shadow-sm transition-colors hover:border-brand-300 ${
+              status === OrderStatus.CONFIRMED
+                ? 'border-brand-400 ring-1 ring-brand-200'
+                : 'border-slate-200'
+            }`}
+          >
+            <div className="text-[11px] font-medium text-brand-700">Подтверждены</div>
+            <div className="text-lg font-bold text-brand-900 mt-0.5">{stats.confirmed}</div>
+          </Link>
+          <Link
+            href="/admin/orders?status=ASSIGNED_TO_DRIVER"
+            className={`rounded-xl border px-3 py-2.5 bg-white shadow-sm transition-colors hover:border-indigo-300 ${
+              status === OrderStatus.ASSIGNED_TO_DRIVER ||
+              status === OrderStatus.ACCEPTED_BY_DRIVER ||
+              status === OrderStatus.PICKED_UP
+                ? 'border-indigo-400 ring-1 ring-indigo-200'
+                : 'border-slate-200'
+            }`}
+          >
+            <div className="text-[11px] font-medium text-indigo-700">В доставке</div>
+            <div className="text-lg font-bold text-indigo-900 mt-0.5">{stats.inDelivery}</div>
+          </Link>
+          <Link
+            href="/admin/orders?status=COMPLETED"
+            className={`rounded-xl border px-3 py-2.5 bg-white shadow-sm transition-colors hover:border-emerald-300 ${
+              status === OrderStatus.COMPLETED
+                ? 'border-emerald-400 ring-1 ring-emerald-200'
+                : 'border-slate-200'
+            }`}
+          >
+            <div className="text-[11px] font-medium text-emerald-700">Завершены</div>
+            <div className="text-lg font-bold text-emerald-900 mt-0.5">{stats.completed}</div>
+          </Link>
+          <Link
+            href="/admin/orders?status=REJECTED_BY_MANAGER"
+            className={`rounded-xl border px-3 py-2.5 bg-white shadow-sm transition-colors hover:border-rose-300 ${
+              status === OrderStatus.REJECTED_BY_MANAGER || status === OrderStatus.CANCELLED
+                ? 'border-rose-400 ring-1 ring-rose-200'
+                : 'border-slate-200'
+            }`}
+          >
+            <div className="text-[11px] font-medium text-rose-700">Отклонены / отм.</div>
+            <div className="text-lg font-bold text-rose-900 mt-0.5">{stats.rejected}</div>
+          </Link>
+        </div>
+      )}
 
       {/* Filter / Search Bar */}
       <Card className="p-4 border-slate-200 bg-white shadow-sm">
@@ -210,7 +295,12 @@ export default async function AdminOrdersPage({ searchParams }: AdminOrdersPageP
                   const client = order.client;
                   const warehouse = order.warehouse;
                   const currentAssignment = order.assignments?.[0];
-                  const driverName = currentAssignment?.driver?.fullName;
+                  const hasActiveAssignment = Boolean(
+                    currentAssignment && currentAssignment.status !== 'CANCELLED'
+                  );
+                  const driverName = hasActiveAssignment
+                    ? currentAssignment?.driver?.fullName
+                    : undefined;
 
                   return (
                     <TableRow key={order.id} className="hover:bg-slate-50/80">
@@ -286,7 +376,13 @@ export default async function AdminOrdersPage({ searchParams }: AdminOrdersPageP
                         )}
                       </TableCell>
                       <TableCell>
-                        <StatusBadge status={order.status} />
+                        <AdminOrderStatusDropdown
+                          orderId={order.id}
+                          orderNumber={order.orderNumber}
+                          currentStatus={order.status}
+                          hasAssignedDriver={hasActiveAssignment}
+                          canChangeStatus={canChangeStatus}
+                        />
                       </TableCell>
                       <TableCell className="text-right">
                         <Link href={`/admin/orders/${order.id}`}>
