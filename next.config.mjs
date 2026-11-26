@@ -8,6 +8,9 @@ export default (phase) => {
     distDir: isDev ? '.next-dev' : '.next',
     reactStrictMode: true,
     poweredByHeader: false,
+    images: {
+      formats: ['image/avif', 'image/webp'],
+    },
     serverExternalPackages: ['argon2', 'pino', 'pino-pretty'],
   };
 };

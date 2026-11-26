@@ -7,97 +7,15 @@ import {
   type CountryCode,
   type PhoneNumber,
 } from 'libphonenumber-js';
+import {
+  POPULAR_COUNTRIES,
+  RUSSIAN_COUNTRY_NAMES,
+  getCountryFlag,
+  type CountryInfo,
+} from '@/lib/phone-client';
 
-export type { CountryCode };
-
-export interface CountryInfo {
-  code: CountryCode;
-  name: string;
-  callingCode: string;
-  flag: string;
-}
-
-/**
- * Returns flag emoji for ISO-3166-1 alpha-2 country code.
- */
-export function getCountryFlag(countryCode: string): string {
-  if (!countryCode || countryCode.length !== 2) return '🌐';
-  return countryCode
-    .toUpperCase()
-    .replace(/./g, (char) => String.fromCodePoint(127397 + char.charCodeAt(0)));
-}
-
-/**
- * Popular countries shown at the top of the country selector.
- */
-export const POPULAR_COUNTRIES: CountryInfo[] = [
-  { code: 'KG', name: 'Кыргызстан', callingCode: '+996', flag: '🇰🇬' },
-  { code: 'RU', name: 'Россия', callingCode: '+7', flag: '🇷🇺' },
-  { code: 'KZ', name: 'Казахстан', callingCode: '+7', flag: '🇰🇿' },
-  { code: 'UZ', name: 'Узбекистан', callingCode: '+998', flag: '🇺🇿' },
-  { code: 'BY', name: 'Беларусь', callingCode: '+375', flag: '🇧🇾' },
-  { code: 'TR', name: 'Турция', callingCode: '+90', flag: '🇹🇷' },
-  { code: 'CN', name: 'Китай', callingCode: '+86', flag: '🇨🇳' },
-  { code: 'AE', name: 'ОАЭ', callingCode: '+971', flag: '🇦🇪' },
-  { code: 'DE', name: 'Германия', callingCode: '+49', flag: '🇩🇪' },
-  { code: 'US', name: 'США', callingCode: '+1', flag: '🇺🇸' },
-  { code: 'TJ', name: 'Таджикистан', callingCode: '+992', flag: '🇹🇯' },
-  { code: 'AM', name: 'Армения', callingCode: '+374', flag: '🇦🇲' },
-  { code: 'AZ', name: 'Азербайджан', callingCode: '+994', flag: '🇦🇿' },
-  { code: 'GE', name: 'Грузия', callingCode: '+995', flag: '🇬🇪' },
-  { code: 'GB', name: 'Великобритания', callingCode: '+44', flag: '🇬🇧' },
-  { code: 'PL', name: 'Польша', callingCode: '+48', flag: '🇵🇱' },
-  { code: 'LT', name: 'Литва', callingCode: '+370', flag: '🇱🇹' },
-  { code: 'LV', name: 'Латвия', callingCode: '+371', flag: '🇱🇻' },
-  { code: 'EE', name: 'Эстония', callingCode: '+372', flag: '🇪🇪' },
-  { code: 'UA', name: 'Украина', callingCode: '+380', flag: '🇺🇦' },
-];
-
-/**
- * Russian country names dictionary for all other countries.
- */
-const RUSSIAN_COUNTRY_NAMES: Partial<Record<CountryCode, string>> = {
-  AT: 'Австрия',
-  AU: 'Австралия',
-  BE: 'Бельгия',
-  BG: 'Болгария',
-  BR: 'Бразилия',
-  CA: 'Канада',
-  CH: 'Швейцария',
-  CY: 'Кипр',
-  CZ: 'Чехия',
-  DK: 'Дания',
-  ES: 'Испания',
-  FI: 'Финляндия',
-  FR: 'Франция',
-  GR: 'Греция',
-  HR: 'Хорватия',
-  HU: 'Венгрия',
-  ID: 'Индонезия',
-  IE: 'Ирландия',
-  IL: 'Израиль',
-  IN: 'Индия',
-  IT: 'Италия',
-  JP: 'Япония',
-  KR: 'Южная Корея',
-  MD: 'Молдова',
-  MN: 'Монголия',
-  MY: 'Малайзия',
-  NL: 'Нидерланды',
-  NO: 'Норвегия',
-  NZ: 'Новая Зеландия',
-  PT: 'Португалия',
-  QA: 'Катар',
-  RO: 'Румыния',
-  RS: 'Сербия',
-  SA: 'Саудовская Аравия',
-  SE: 'Швеция',
-  SG: 'Сингапур',
-  SK: 'Словакия',
-  TH: 'Таиланд',
-  TM: 'Туркменистан',
-  VN: 'Вьетнам',
-};
+export type { CountryCode, CountryInfo };
+export { POPULAR_COUNTRIES, getCountryFlag };
 
 /**
  * Full sorted list of supported countries: popular first, then alphabetical.

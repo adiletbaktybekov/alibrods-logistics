@@ -105,8 +105,16 @@ export function TelegramWebAppProvider({ children }: { children: React.ReactNode
   }, [pathname, router]);
 
   React.useEffect(() => {
-    const tg = window.Telegram?.WebApp;
-    if (tg) {
+    let initialized = false;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const initTelegram = (tg: TelegramWebAppData) => {
+      if (initialized) return;
+      initialized = true;
+      if (pollTimer) clearInterval(pollTimer);
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+
       try {
         tg.ready();
         tg.expand();
@@ -121,11 +129,36 @@ export function TelegramWebAppProvider({ children }: { children: React.ReactNode
         setIsReady(true);
         setIsCheckingAuth(false);
       }
-    } else {
-      // Running in browser outside Telegram
-      setIsReady(true);
-      setIsCheckingAuth(false);
+    };
+
+    const existingTg = window.Telegram?.WebApp;
+    if (existingTg) {
+      initTelegram(existingTg);
+      return;
     }
+
+    // Script loads with strategy="afterInteractive" so Mini App never blocks on telegram.org;
+    // wait briefly for Telegram WebApp SDK without blocking initial render.
+    pollTimer = setInterval(() => {
+      const tg = window.Telegram?.WebApp;
+      if (tg) {
+        initTelegram(tg);
+      }
+    }, 100);
+
+    timeoutTimer = setTimeout(() => {
+      if (!initialized) {
+        initialized = true;
+        if (pollTimer) clearInterval(pollTimer);
+        setIsReady(true);
+        setIsCheckingAuth(false);
+      }
+    }, 2500);
+
+    return () => {
+      if (pollTimer) clearInterval(pollTimer);
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+    };
   }, [checkAuth]);
 
   // BackButton management

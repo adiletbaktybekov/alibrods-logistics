@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { siteConfig } from '@/config/site';
+import { ChunkErrorRecovery } from '@/components/system/chunk-error-recovery';
 
 import type { Viewport } from 'next';
 
@@ -55,6 +56,7 @@ export default function RootLayout({
   return (
     <html lang="ru">
       <body className="min-h-screen bg-slate-50 text-slate-900 antialiased">
+        <ChunkErrorRecovery />
         {children}
       </body>
     </html>

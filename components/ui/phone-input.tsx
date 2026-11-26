@@ -5,13 +5,16 @@ import { cn } from '@/lib/utils';
 import { Label } from '@/components/ui/label';
 import {
   type CountryCode,
-  getAllCountries,
+  type CountryInfo,
+  type FullPhoneUtils,
+  POPULAR_COUNTRIES,
   getCountryFlag,
-  getCountryCallingCodeSafe,
-  normalizePhoneNumber,
-  formatNationalDigits,
-} from '@/lib/phone';
-import { parsePhoneNumberFromString } from 'libphonenumber-js';
+  getPopularCallingCode,
+  formatNationalDigitsLite,
+  normalizePhoneNumberLite,
+  parseInitialPhoneLite,
+  loadFullPhoneUtils,
+} from '@/lib/phone-client';
 
 export interface PhoneInputProps
   extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'onChange'> {
@@ -22,58 +25,6 @@ export interface PhoneInputProps
   defaultValue?: string;
   defaultCountry?: CountryCode;
   onChange?: (value: string) => void;
-}
-
-interface ParsedInitial {
-  country: CountryCode;
-  national: string;
-}
-
-function parseInitialPhone(raw?: string | null, fallbackCountry: CountryCode = 'KG'): ParsedInitial {
-  if (!raw || !raw.trim()) {
-    return { country: fallbackCountry, national: '' };
-  }
-  const trimmed = raw.trim();
-
-  // If starts with +, parse internationally
-  if (trimmed.startsWith('+')) {
-    const p = parsePhoneNumberFromString(trimmed);
-    if (p) {
-      return {
-        country: p.country || fallbackCountry,
-        national: p.nationalNumber || '',
-      };
-    }
-  }
-
-  // Try parsing with fallbackCountry
-  const p = parsePhoneNumberFromString(trimmed, fallbackCountry);
-  if (p && p.isValid()) {
-    return {
-      country: p.country || fallbackCountry,
-      national: p.nationalNumber || '',
-    };
-  }
-
-  // Fallback: check if 11 digits starting with 7 or 8 (Russian trunk)
-  const clean = trimmed.replace(/\D/g, '');
-  if (clean.length === 11 && (clean.startsWith('7') || clean.startsWith('8'))) {
-    return {
-      country: 'RU',
-      national: clean.slice(1),
-    };
-  }
-  if (clean.startsWith('996') && clean.length === 12) {
-    return {
-      country: 'KG',
-      national: clean.slice(3),
-    };
-  }
-
-  return {
-    country: fallbackCountry,
-    national: clean,
-  };
 }
 
 export const PhoneInput = React.forwardRef<HTMLInputElement, PhoneInputProps>(
@@ -91,17 +42,19 @@ export const PhoneInput = React.forwardRef<HTMLInputElement, PhoneInputProps>(
       value,
       onChange,
       disabled,
+      onFocus,
       ...props
     },
     ref
   ) => {
     const isControlled = value !== undefined;
-    const initial = parseInitialPhone(isControlled ? value : defaultValue, defaultCountry);
+    const initial = parseInitialPhoneLite(isControlled ? value : defaultValue, defaultCountry);
 
+    const [fullUtils, setFullUtils] = React.useState<FullPhoneUtils | null>(null);
     const [country, setCountry] = React.useState<CountryCode>(initial.country);
     const [nationalDigits, setNationalDigits] = React.useState<string>(initial.national);
     const [displayVal, setDisplayVal] = React.useState<string>(() =>
-      formatNationalDigits(initial.national, initial.country)
+      formatNationalDigitsLite(initial.national, initial.country)
     );
     const [dropdownOpen, setDropdownOpen] = React.useState<boolean>(false);
     const [searchQuery, setSearchQuery] = React.useState<string>('');
@@ -110,18 +63,66 @@ export const PhoneInput = React.forwardRef<HTMLInputElement, PhoneInputProps>(
     const dropdownRef = React.useRef<HTMLDivElement>(null);
     const searchInputRef = React.useRef<HTMLInputElement>(null);
     const inputFieldRef = React.useRef<HTMLInputElement | null>(null);
+    const loadingRef = React.useRef<boolean>(false);
+
+    const ensureFullUtils = React.useCallback(() => {
+      if (fullUtils || loadingRef.current) return;
+      loadingRef.current = true;
+      loadFullPhoneUtils()
+        .then((utils) => {
+          setFullUtils(utils);
+        })
+        .catch(() => {
+          // Keep graceful lite fallback active if chunk fetch fails on unstable network
+        })
+        .finally(() => {
+          loadingRef.current = false;
+        });
+    }, [fullUtils]);
+
+    const formatDigits = React.useCallback(
+      (digits: string, targetCountry: CountryCode) =>
+        fullUtils
+          ? fullUtils.formatNationalDigits(digits, targetCountry)
+          : formatNationalDigitsLite(digits, targetCountry),
+      [fullUtils]
+    );
+
+    const normalizeNumber = React.useCallback(
+      (raw: string, targetCountry: CountryCode) =>
+        fullUtils
+          ? fullUtils.normalizePhoneNumber(raw, targetCountry)
+          : normalizePhoneNumberLite(raw, targetCountry),
+      [fullUtils]
+    );
 
     // Sync controlled value changes
     React.useEffect(() => {
       if (isControlled) {
-        const next = parseInitialPhone(value, country);
+        const next =
+          fullUtils && value?.trim()
+            ? (() => {
+                const trimmed = value.trim();
+                const parsed = trimmed.startsWith('+')
+                  ? fullUtils.parsePhone(trimmed)
+                  : fullUtils.parsePhone(trimmed, country);
+                if (parsed && parsed.isValid) {
+                  return {
+                    country: parsed.country || country,
+                    national: parsed.nationalNumber || '',
+                  };
+                }
+                return parseInitialPhoneLite(value, country);
+              })()
+            : parseInitialPhoneLite(value, country);
+
         if (next.country !== country && value?.startsWith('+')) {
           setCountry(next.country);
         }
         setNationalDigits(next.national);
-        setDisplayVal(formatNationalDigits(next.national, next.country));
+        setDisplayVal(formatDigits(next.national, next.country));
       }
-    }, [isControlled, value, country]);
+    }, [isControlled, value, country, fullUtils, formatDigits]);
 
     // Close dropdown on outside click
     React.useEffect(() => {
@@ -131,23 +132,26 @@ export const PhoneInput = React.forwardRef<HTMLInputElement, PhoneInputProps>(
         }
       };
       if (dropdownOpen) {
+        ensureFullUtils();
         document.addEventListener('mousedown', handleOutsideClick);
         setTimeout(() => searchInputRef.current?.focus(), 50);
       }
       return () => {
         document.removeEventListener('mousedown', handleOutsideClick);
       };
-    }, [dropdownOpen]);
+    }, [dropdownOpen, ensureFullUtils]);
 
-    const callingCode = getCountryCallingCodeSafe(country);
+    const callingCode = fullUtils
+      ? fullUtils.getCountryCallingCodeSafe(country)
+      : getPopularCallingCode(country);
     const flag = getCountryFlag(country);
 
     // Compute canonical E.164 value
     const canonicalValue = React.useMemo(() => {
       if (!nationalDigits.trim()) return '';
       const rawWithCode = `${callingCode}${nationalDigits.replace(/\D/g, '')}`;
-      return normalizePhoneNumber(rawWithCode, country);
-    }, [callingCode, nationalDigits, country]);
+      return normalizeNumber(rawWithCode, country);
+    }, [callingCode, nationalDigits, country, normalizeNumber]);
 
     // Calculate dynamic placeholder if not provided
     const dynamicPlaceholder = React.useMemo(() => {
@@ -167,17 +171,22 @@ export const PhoneInput = React.forwardRef<HTMLInputElement, PhoneInputProps>(
       setLocalError(null);
 
       // Reformat current national digits with new country mask
-      const nextDisplay = formatNationalDigits(nationalDigits, newCountry);
+      const nextDisplay = formatDigits(nationalDigits, newCountry);
       setDisplayVal(nextDisplay);
 
-      const nextCalling = getCountryCallingCodeSafe(newCountry);
-      const nextCanonical = nationalDigits ? normalizePhoneNumber(`${nextCalling}${nationalDigits}`, newCountry) : '';
+      const nextCalling = fullUtils
+        ? fullUtils.getCountryCallingCodeSafe(newCountry)
+        : getPopularCallingCode(newCountry);
+      const nextCanonical = nationalDigits
+        ? normalizeNumber(`${nextCalling}${nationalDigits}`, newCountry)
+        : '';
       onChange?.(nextCanonical);
 
       inputFieldRef.current?.focus();
     };
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      ensureFullUtils();
       const raw = e.target.value;
       if (!raw.trim()) {
         setNationalDigits('');
@@ -189,14 +198,25 @@ export const PhoneInput = React.forwardRef<HTMLInputElement, PhoneInputProps>(
 
       // Check if user typed or pasted with '+'
       if (raw.includes('+')) {
-        const parsed = parsePhoneNumberFromString(raw);
-        if (parsed) {
-          const detectedCountry = parsed.country || country;
-          setCountry(detectedCountry);
-          setNationalDigits(parsed.nationalNumber);
-          setDisplayVal(parsed.formatNational());
+        if (fullUtils) {
+          const parsed = fullUtils.parsePhone(raw);
+          if (parsed) {
+            const detectedCountry = parsed.country || country;
+            setCountry(detectedCountry);
+            setNationalDigits(parsed.nationalNumber);
+            setDisplayVal(parsed.formatNational());
+            setLocalError(null);
+            onChange?.(parsed.number);
+            return;
+          }
+        } else {
+          const lite = parseInitialPhoneLite(raw, country);
+          setCountry(lite.country);
+          setNationalDigits(lite.national);
+          setDisplayVal(formatNationalDigitsLite(lite.national, lite.country));
           setLocalError(null);
-          onChange?.(parsed.number);
+          const liteCode = getPopularCallingCode(lite.country);
+          onChange?.(lite.national ? normalizePhoneNumberLite(`${liteCode}${lite.national}`, lite.country) : '');
           return;
         }
       }
@@ -205,33 +225,46 @@ export const PhoneInput = React.forwardRef<HTMLInputElement, PhoneInputProps>(
       const digitsOnly = raw.replace(/\D/g, '');
       setNationalDigits(digitsOnly);
 
-      const formatted = formatNationalDigits(digitsOnly, country);
+      const formatted = formatDigits(digitsOnly, country);
       setDisplayVal(formatted);
       setLocalError(null);
 
-      const nextCanonical = digitsOnly ? normalizePhoneNumber(`${callingCode}${digitsOnly}`, country) : '';
+      const nextCanonical = digitsOnly ? normalizeNumber(`${callingCode}${digitsOnly}`, country) : '';
       onChange?.(nextCanonical);
     };
 
     const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+      ensureFullUtils();
       const pasted = e.clipboardData.getData('text').trim();
       if (!pasted) return;
 
       // Attempt parsing pasted full number
       if (pasted.startsWith('+') || pasted.replace(/\D/g, '').length >= 10) {
-        let parsed = parsePhoneNumberFromString(pasted);
-        if (!parsed) {
-          parsed = parsePhoneNumberFromString(pasted, country);
-        }
+        if (fullUtils) {
+          let parsed = fullUtils.parsePhone(pasted);
+          if (!parsed) {
+            parsed = fullUtils.parsePhone(pasted, country);
+          }
 
-        if (parsed && parsed.isValid()) {
+          if (parsed && parsed.isValid) {
+            e.preventDefault();
+            const nextCountry = parsed.country || country;
+            setCountry(nextCountry);
+            setNationalDigits(parsed.nationalNumber);
+            setDisplayVal(parsed.formatNational());
+            setLocalError(null);
+            onChange?.(parsed.number);
+            return;
+          }
+        } else {
           e.preventDefault();
-          const nextCountry = parsed.country || country;
-          setCountry(nextCountry);
-          setNationalDigits(parsed.nationalNumber);
-          setDisplayVal(parsed.formatNational());
+          const lite = parseInitialPhoneLite(pasted, country);
+          setCountry(lite.country);
+          setNationalDigits(lite.national);
+          setDisplayVal(formatNationalDigitsLite(lite.national, lite.country));
           setLocalError(null);
-          onChange?.(parsed.number);
+          const liteCode = getPopularCallingCode(lite.country);
+          onChange?.(lite.national ? normalizePhoneNumberLite(`${liteCode}${lite.national}`, lite.country) : '');
           return;
         }
       }
@@ -240,13 +273,16 @@ export const PhoneInput = React.forwardRef<HTMLInputElement, PhoneInputProps>(
       e.preventDefault();
       const clean = pasted.replace(/\D/g, '');
       setNationalDigits(clean);
-      const formatted = formatNationalDigits(clean, country);
+      const formatted = formatDigits(clean, country);
       setDisplayVal(formatted);
-      const nextCanonical = clean ? normalizePhoneNumber(`${callingCode}${clean}`, country) : '';
+      const nextCanonical = clean ? normalizeNumber(`${callingCode}${clean}`, country) : '';
       onChange?.(nextCanonical);
     };
 
-    const allCountries = React.useMemo(() => getAllCountries(), []);
+    const allCountries: CountryInfo[] = React.useMemo(
+      () => (fullUtils ? fullUtils.getAllCountries() : POPULAR_COUNTRIES),
+      [fullUtils]
+    );
 
     const filteredCountries = React.useMemo(() => {
       const q = searchQuery.trim().toLowerCase();
@@ -283,7 +319,10 @@ export const PhoneInput = React.forwardRef<HTMLInputElement, PhoneInputProps>(
           <button
             type="button"
             disabled={disabled}
-            onClick={() => setDropdownOpen(!dropdownOpen)}
+            onClick={() => {
+              ensureFullUtils();
+              setDropdownOpen(!dropdownOpen);
+            }}
             className="inline-flex items-center gap-1.5 px-3 py-2 border-r border-slate-200 bg-slate-50 hover:bg-slate-100 transition-colors rounded-l-xl text-slate-800 font-mono text-sm select-none focus:outline-none focus:bg-slate-100"
             title="Выбрать страну"
             aria-label="Выбрать страну и телефонный код"
@@ -323,6 +362,10 @@ export const PhoneInput = React.forwardRef<HTMLInputElement, PhoneInputProps>(
             autoComplete="tel"
             disabled={disabled}
             value={displayVal}
+            onFocus={(e) => {
+              ensureFullUtils();
+              onFocus?.(e);
+            }}
             onChange={handleInputChange}
             onPaste={handlePaste}
             placeholder={dynamicPlaceholder}
@@ -408,4 +451,3 @@ export const PhoneInput = React.forwardRef<HTMLInputElement, PhoneInputProps>(
 );
 
 PhoneInput.displayName = 'PhoneInput';
-
