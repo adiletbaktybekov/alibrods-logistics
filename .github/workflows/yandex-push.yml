@@ -114,22 +114,49 @@ jobs:
           TARGET_TAGGED="cr.yandex/${REGISTRY_ID}/${REPO_NAME}:${IMAGE_TAG}"
           TARGET_LATEST="cr.yandex/${REGISTRY_ID}/${REPO_NAME}:latest"
 
-          echo "Tagging image:"
-          echo "  -> $TARGET_TAGGED"
-          echo "  -> $TARGET_LATEST"
-          docker tag "$SOURCE_IMAGE" "$TARGET_TAGGED"
-          docker tag "$SOURCE_IMAGE" "$TARGET_LATEST"
+          echo "Publishing to Yandex Container Registry (Docker v2 Schema 2 compliant)..."
+          echo "  Source: $SOURCE_IMAGE"
+          echo "  Target: $TARGET_TAGGED"
+          echo "  Target: $TARGET_LATEST"
 
-          echo "Pushing tagged image to Yandex Container Registry..."
-          if ! docker push "$TARGET_TAGGED"; then
-            echo "::error::Failed to push $TARGET_TAGGED. Ensure service account has 'container-registry.images.pusher' role on registry $REGISTRY_ID."
-            exit 1
+          AUTH_FILE="${HOME}/.docker/config.json"
+
+          # Use Skopeo to ensure strict Docker v2 Schema 2 (v2s2) compatibility as required by YCR,
+          # selecting linux/amd64 and cleanly stripping OCI buildx attestation manifests.
+          echo "Copying ${IMAGE_TAG} to YCR..."
+          if ! skopeo copy \
+            --format v2s2 \
+            --override-os linux \
+            --override-arch amd64 \
+            --authfile "$AUTH_FILE" \
+            "docker://${SOURCE_IMAGE}" \
+            "docker://${TARGET_TAGGED}"; then
+            echo "Falling back to local daemon source..."
+            skopeo copy \
+              --format v2s2 \
+              --override-os linux \
+              --override-arch amd64 \
+              --authfile "$AUTH_FILE" \
+              "docker-daemon:${SOURCE_IMAGE}" \
+              "docker://${TARGET_TAGGED}"
           fi
 
-          echo "Pushing latest image to Yandex Container Registry..."
-          if ! docker push "$TARGET_LATEST"; then
-            echo "::error::Failed to push $TARGET_LATEST."
-            exit 1
+          echo "Copying latest tag to YCR..."
+          if ! skopeo copy \
+            --format v2s2 \
+            --override-os linux \
+            --override-arch amd64 \
+            --authfile "$AUTH_FILE" \
+            "docker://${SOURCE_IMAGE}" \
+            "docker://${TARGET_LATEST}"; then
+            echo "Falling back to local daemon source..."
+            skopeo copy \
+              --format v2s2 \
+              --override-os linux \
+              --override-arch amd64 \
+              --authfile "$AUTH_FILE" \
+              "docker-daemon:${SOURCE_IMAGE}" \
+              "docker://${TARGET_LATEST}"
           fi
 
           echo "TARGET_TAGGED=$TARGET_TAGGED" >> "$GITHUB_ENV"
@@ -146,5 +173,6 @@ jobs:
           echo "Published Latest: $TARGET_LATEST"
           echo "================================================================="
 
-          # Inspect manifest from registry to verify it is accessible and published
-          docker manifest inspect "$TARGET_TAGGED"
+          AUTH_FILE="${HOME}/.docker/config.json"
+          echo "Inspecting manifest for $TARGET_TAGGED..."
+          skopeo inspect --authfile "$AUTH_FILE" "docker://${TARGET_TAGGED}" | jq '{name: .Name, tag: .Tag, digest: .Digest, architecture: .Architecture, os: .Os, created: .Created, layers_count: (.Layers | length)}'
