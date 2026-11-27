@@ -1,0 +1,29 @@
+# Version control & local IDE
+.git
+.gitignore
+.github
+.vscode
+.idea
+.DS_Store
+
+# Dependencies & build artifacts
+node_modules
+.next
+.next-dev
+out
+coverage
+*.tsbuildinfo
+
+# Local environment files & secrets (NEVER bake secrets into container images)
+.env
+.env.*
+!.env.example
+
+# Tests, docs, backups & logs
+tests
+*.log
+npm-debug.log*
+backups
+docs
+*.md
+!README.md

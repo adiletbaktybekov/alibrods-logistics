@@ -1,4 +1,7 @@
+import crypto from 'crypto';
 import { logger } from '@/lib/logger';
+
+export type TelegramBotRole = 'client' | 'driver' | 'manager';
 
 export interface SendTelegramMessageOptions {
   chatId: number | string;
@@ -6,6 +9,7 @@ export interface SendTelegramMessageOptions {
   parseMode?: 'HTML' | 'MarkdownV2' | 'Markdown';
   replyMarkup?: unknown;
   messageThreadId?: number | string;
+  idempotencyKey?: string;
 }
 
 export interface EditTelegramMessageOptions {
@@ -14,6 +18,7 @@ export interface EditTelegramMessageOptions {
   text: string;
   parseMode?: 'HTML' | 'MarkdownV2' | 'Markdown';
   replyMarkup?: unknown;
+  idempotencyKey?: string;
 }
 
 export interface SendTelegramPhotoOptions {
@@ -23,6 +28,7 @@ export interface SendTelegramPhotoOptions {
   parseMode?: 'HTML' | 'MarkdownV2' | 'Markdown';
   replyMarkup?: unknown;
   messageThreadId?: number | string;
+  idempotencyKey?: string;
 }
 
 export interface TelegramMenuButton {
@@ -42,21 +48,79 @@ export interface SetChatMenuButtonOptions {
 export class TelegramBotClient {
   private readonly botToken: string;
   private readonly baseUrl: string;
+  private readonly botRole?: TelegramBotRole;
 
-  constructor(botToken: string) {
+  constructor(botToken: string, botRole?: TelegramBotRole) {
     this.botToken = botToken;
     this.baseUrl = `https://api.telegram.org/bot${this.botToken}`;
+    this.botRole = botRole;
   }
 
   public getBotToken(): string {
     return this.botToken;
   }
 
+  public getBotRole(): TelegramBotRole | undefined {
+    return this.botRole;
+  }
+
+  private getRelayConfig(): { url: string; secret: string; bot: TelegramBotRole } | null {
+    const url = process.env.TELEGRAM_RELAY_URL?.trim();
+    const secret = process.env.TELEGRAM_RELAY_SECRET?.trim();
+    if (!url || !secret || !this.botRole) {
+      return null;
+    }
+    return { url, secret, bot: this.botRole };
+  }
+
+  private isConfigured(): boolean {
+    return Boolean(this.botToken || this.getRelayConfig());
+  }
+
+  private async callTelegramApi(
+    method: string,
+    params?: Record<string, unknown>,
+    options?: { directHttpMethod?: 'GET' | 'POST'; directQuery?: string; idempotencyKey?: string }
+  ): Promise<Response> {
+    const relay = this.getRelayConfig();
+    if (relay) {
+      const idempotencyKey = options?.idempotencyKey || crypto.randomUUID();
+      return fetch(relay.url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${relay.secret}`,
+          'X-Relay-Timestamp': String(Date.now()),
+          'X-Idempotency-Key': idempotencyKey,
+        },
+        body: JSON.stringify({
+          bot: relay.bot,
+          method,
+          params: params ?? {},
+        }),
+        signal: AbortSignal.timeout(12_000),
+      });
+    }
+
+    if (options?.directHttpMethod === 'GET') {
+      const suffix = options.directQuery ? `?${options.directQuery}` : '';
+      return fetch(`${this.baseUrl}/${method}${suffix}`, {
+        method: 'GET',
+      });
+    }
+
+    return fetch(`${this.baseUrl}/${method}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params ?? {}),
+    });
+  }
+
   public lastSentMessageId?: number;
   public lastError?: { httpStatus?: number; errorCode?: number; description?: string };
 
   public async sendMessage(options: SendTelegramMessageOptions): Promise<boolean> {
-    if (!this.botToken) {
+    if (!this.isConfigured()) {
       this.lastError = {
         httpStatus: 0,
         description: 'Telegram bot token not configured.',
@@ -73,13 +137,13 @@ export class TelegramBotClient {
       event: 'TELEGRAM_API_REQUEST_STARTED',
       chatId: options.chatId,
       hasThreadId: options.messageThreadId !== undefined && options.messageThreadId !== null,
+      viaRelay: Boolean(this.getRelayConfig()),
     });
 
     try {
-      const response = await fetch(`${this.baseUrl}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const response = await this.callTelegramApi(
+        'sendMessage',
+        {
           chat_id: options.chatId,
           text: options.text,
           parse_mode: options.parseMode || 'HTML',
@@ -87,8 +151,9 @@ export class TelegramBotClient {
           ...(options.messageThreadId !== undefined && options.messageThreadId !== null
             ? { message_thread_id: Number(options.messageThreadId) }
             : {}),
-        }),
-      });
+        },
+        { idempotencyKey: options.idempotencyKey }
+      );
 
       const data = await response.json();
       if (!response.ok || !data.ok) {
@@ -135,9 +200,14 @@ export class TelegramBotClient {
     options: SendTelegramMessageOptions,
     maxRetries = 2
   ): Promise<boolean> {
+    const stableIdempotencyKey = options.idempotencyKey || crypto.randomUUID();
+    const requestOptions: SendTelegramMessageOptions = {
+      ...options,
+      idempotencyKey: stableIdempotencyKey,
+    };
     let attempt = 0;
     while (attempt <= maxRetries) {
-      const success = await this.sendMessage(options);
+      const success = await this.sendMessage(requestOptions);
       if (success) return true;
       attempt++;
       if (attempt <= maxRetries) {
@@ -148,7 +218,7 @@ export class TelegramBotClient {
   }
 
   public async sendPhoto(options: SendTelegramPhotoOptions): Promise<boolean> {
-    if (!this.botToken) {
+    if (!this.isConfigured()) {
       logger.warn({
         event: 'TELEGRAM_API_ERROR',
         description: 'Telegram bot token not configured. Skipping sendPhoto.',
@@ -158,10 +228,9 @@ export class TelegramBotClient {
     }
 
     try {
-      const response = await fetch(`${this.baseUrl}/sendPhoto`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const response = await this.callTelegramApi(
+        'sendPhoto',
+        {
           chat_id: options.chatId,
           photo: options.photo,
           caption: options.caption,
@@ -170,8 +239,9 @@ export class TelegramBotClient {
           ...(options.messageThreadId !== undefined && options.messageThreadId !== null
             ? { message_thread_id: Number(options.messageThreadId) }
             : {}),
-        }),
-      });
+        },
+        { idempotencyKey: options.idempotencyKey }
+      );
 
       const data = await response.json();
       if (!response.ok || !data.ok) {
@@ -202,9 +272,14 @@ export class TelegramBotClient {
     options: SendTelegramPhotoOptions,
     maxRetries = 2
   ): Promise<boolean> {
+    const stableIdempotencyKey = options.idempotencyKey || crypto.randomUUID();
+    const requestOptions: SendTelegramPhotoOptions = {
+      ...options,
+      idempotencyKey: stableIdempotencyKey,
+    };
     let attempt = 0;
     while (attempt <= maxRetries) {
-      const success = await this.sendPhoto(options);
+      const success = await this.sendPhoto(requestOptions);
       if (success) return true;
       attempt++;
       if (attempt <= maxRetries) {
@@ -219,17 +294,13 @@ export class TelegramBotClient {
     text?: string,
     showAlert = false
   ): Promise<boolean> {
-    if (!this.botToken) return false;
+    if (!this.isConfigured()) return false;
 
     try {
-      const response = await fetch(`${this.baseUrl}/answerCallbackQuery`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          callback_query_id: callbackQueryId,
-          text,
-          show_alert: showAlert,
-        }),
+      const response = await this.callTelegramApi('answerCallbackQuery', {
+        callback_query_id: callbackQueryId,
+        text,
+        show_alert: showAlert,
       });
       return response.ok;
     } catch {
@@ -238,7 +309,7 @@ export class TelegramBotClient {
   }
 
   public async editMessageText(options: EditTelegramMessageOptions): Promise<boolean> {
-    if (!this.botToken) {
+    if (!this.isConfigured()) {
       logger.warn({
         event: 'TELEGRAM_API_ERROR',
         description: 'Telegram bot token not configured. Skipping editMessageText.',
@@ -249,17 +320,17 @@ export class TelegramBotClient {
     }
 
     try {
-      const response = await fetch(`${this.baseUrl}/editMessageText`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const response = await this.callTelegramApi(
+        'editMessageText',
+        {
           chat_id: options.chatId,
           message_id: Number(options.messageId),
           text: options.text,
           parse_mode: options.parseMode || 'HTML',
           reply_markup: options.replyMarkup,
-        }),
-      });
+        },
+        { idempotencyKey: options.idempotencyKey }
+      );
 
       const data = await response.json();
       if (!response.ok || !data.ok) {
@@ -290,14 +361,14 @@ export class TelegramBotClient {
    * Retrieves basic information about the bot via getMe.
    */
   public async getMe(): Promise<{ id: number; is_bot: boolean; first_name: string; username?: string } | null> {
-    if (!this.botToken) {
+    if (!this.isConfigured()) {
       logger.warn('Telegram bot token not configured. Skipping getMe.');
       return null;
     }
 
     try {
-      const response = await fetch(`${this.baseUrl}/getMe`, {
-        method: 'GET',
+      const response = await this.callTelegramApi('getMe', undefined, {
+        directHttpMethod: 'GET',
       });
 
       const data = await response.json();
@@ -319,15 +390,20 @@ export class TelegramBotClient {
   public async getChat(
     chatId: number | string
   ): Promise<{ id: number | string; type: string; title?: string; username?: string; description?: string } | null> {
-    if (!this.botToken) {
+    if (!this.isConfigured()) {
       logger.warn('Telegram bot token not configured. Skipping getChat.');
       return null;
     }
 
     try {
-      const response = await fetch(`${this.baseUrl}/getChat?chat_id=${encodeURIComponent(chatId)}`, {
-        method: 'GET',
-      });
+      const response = await this.callTelegramApi(
+        'getChat',
+        { chat_id: chatId },
+        {
+          directHttpMethod: 'GET',
+          directQuery: `chat_id=${encodeURIComponent(chatId)}`,
+        }
+      );
 
       const data = await response.json();
       if (!response.ok || !data.ok || !data.result) {
@@ -354,15 +430,19 @@ export class TelegramBotClient {
     can_send_messages?: boolean;
     is_anonymous?: boolean;
   } | null> {
-    if (!this.botToken) {
+    if (!this.isConfigured()) {
       logger.warn('Telegram bot token not configured. Skipping getChatMember.');
       return null;
     }
 
     try {
-      const response = await fetch(
-        `${this.baseUrl}/getChatMember?chat_id=${encodeURIComponent(chatId)}&user_id=${encodeURIComponent(userId)}`,
-        { method: 'GET' }
+      const response = await this.callTelegramApi(
+        'getChatMember',
+        { chat_id: chatId, user_id: userId },
+        {
+          directHttpMethod: 'GET',
+          directQuery: `chat_id=${encodeURIComponent(chatId)}&user_id=${encodeURIComponent(userId)}`,
+        }
       );
 
       const data = await response.json();
@@ -384,15 +464,20 @@ export class TelegramBotClient {
   public async getFile(
     fileId: string
   ): Promise<{ file_id: string; file_unique_id?: string; file_size?: number; file_path?: string } | null> {
-    if (!this.botToken) {
+    if (!this.isConfigured()) {
       logger.warn('Telegram bot token not configured. Skipping getFile.');
       return null;
     }
 
     try {
-      const response = await fetch(`${this.baseUrl}/getFile?file_id=${encodeURIComponent(fileId)}`, {
-        method: 'GET',
-      });
+      const response = await this.callTelegramApi(
+        'getFile',
+        { file_id: fileId },
+        {
+          directHttpMethod: 'GET',
+          directQuery: `file_id=${encodeURIComponent(fileId)}`,
+        }
+      );
 
       const data = await response.json();
       if (!response.ok || !data.ok || !data.result) {
@@ -437,7 +522,7 @@ export class TelegramBotClient {
    * Sets the menu button for a private chat or default.
    */
   public async setChatMenuButton(options?: SetChatMenuButtonOptions): Promise<boolean> {
-    if (!this.botToken) {
+    if (!this.isConfigured()) {
       logger.warn('Telegram bot token not configured. Skipping setChatMenuButton.');
       return false;
     }
@@ -451,11 +536,7 @@ export class TelegramBotClient {
         body.menu_button = options.menuButton;
       }
 
-      const response = await fetch(`${this.baseUrl}/setChatMenuButton`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
+      const response = await this.callTelegramApi('setChatMenuButton', body);
 
       const data = await response.json();
       if (!response.ok || !data.ok) {
@@ -474,7 +555,7 @@ export class TelegramBotClient {
    * Gets the menu button for a private chat or default.
    */
   public async getChatMenuButton(chatId?: number | string): Promise<TelegramMenuButton | null> {
-    if (!this.botToken) {
+    if (!this.isConfigured()) {
       logger.warn('Telegram bot token not configured. Skipping getChatMenuButton.');
       return null;
     }
@@ -485,11 +566,7 @@ export class TelegramBotClient {
         body.chat_id = chatId;
       }
 
-      const response = await fetch(`${this.baseUrl}/getChatMenuButton`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
+      const response = await this.callTelegramApi('getChatMenuButton', body);
 
       const data = await response.json();
       if (!response.ok || !data.ok || !data.result) {
@@ -508,13 +585,9 @@ export class TelegramBotClient {
    * Sets bot commands in Telegram.
    */
   public async setMyCommands(commands: Array<{ command: string; description: string }>): Promise<boolean> {
-    if (!this.botToken) return false;
+    if (!this.isConfigured()) return false;
     try {
-      const response = await fetch(`${this.baseUrl}/setMyCommands`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ commands }),
-      });
+      const response = await this.callTelegramApi('setMyCommands', { commands });
       const data = await response.json();
       return Boolean(response.ok && data.ok);
     } catch {
@@ -532,7 +605,7 @@ export function getDriverTelegramBotClient(): TelegramBotClient {
   const token =
     process.env.TELEGRAM_DRIVER_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '';
   if (!driverBotInstance || driverBotInstance.getBotToken() !== token) {
-    driverBotInstance = new TelegramBotClient(token);
+    driverBotInstance = new TelegramBotClient(token, 'driver');
   }
   return driverBotInstance;
 }
@@ -541,7 +614,7 @@ export function getClientTelegramBotClient(): TelegramBotClient {
   const token =
     process.env.TELEGRAM_CLIENT_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '';
   if (!clientBotInstance || clientBotInstance.getBotToken() !== token) {
-    clientBotInstance = new TelegramBotClient(token);
+    clientBotInstance = new TelegramBotClient(token, 'client');
   }
   return clientBotInstance;
 }
@@ -550,7 +623,7 @@ export function getManagerTelegramBotClient(): TelegramBotClient {
   const token =
     process.env.TELEGRAM_MANAGER_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || '';
   if (!managerBotInstance || managerBotInstance.getBotToken() !== token) {
-    managerBotInstance = new TelegramBotClient(token);
+    managerBotInstance = new TelegramBotClient(token, 'manager');
   }
   return managerBotInstance;
 }

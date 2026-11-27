@@ -17,9 +17,25 @@ const envSchema = z.object({
   TELEGRAM_MANAGER_GROUP_TOPIC_ID: z.string().optional(),
   TELEGRAM_ENABLE_GROUP_NOTIFICATIONS: z.coerce.boolean().default(true),
   TELEGRAM_BOT_WEBHOOK_SECRET: z.string().optional(),
+  TELEGRAM_RELAY_URL: z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+    z.string().url().optional()
+  ),
+  TELEGRAM_RELAY_SECRET: z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+    z.string().min(24).optional()
+  ),
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(100),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60000),
 }).superRefine((data, ctx) => {
+  const isBuildPhase =
+    process.env.NEXT_PHASE === 'phase-production-build' ||
+    process.env.SKIP_ENV_VALIDATION === 'true';
+
+  if (isBuildPhase) {
+    return;
+  }
+
   const isProdOrStaging =
     data.NODE_ENV === 'production' ||
     process.env.VERCEL === '1' ||
@@ -61,19 +77,24 @@ let parsedEnv: Env;
 try {
   parsedEnv = envSchema.parse(process.env);
 } catch (error) {
+  const isBuildPhase =
+    process.env.NEXT_PHASE === 'phase-production-build' ||
+    process.env.SKIP_ENV_VALIDATION === 'true';
+
   const isProdOrStaging =
-    process.env.NODE_ENV === 'production' ||
-    process.env.VERCEL === '1' ||
-    !!process.env.VERCEL ||
-    process.env.STAGING === 'true' ||
-    process.env.REQUIRE_DB_ENV === 'true' ||
-    process.env.VERCEL_ENV === 'preview' ||
-    process.env.VERCEL_ENV === 'production';
+    !isBuildPhase &&
+    (process.env.NODE_ENV === 'production' ||
+      process.env.VERCEL === '1' ||
+      !!process.env.VERCEL ||
+      process.env.STAGING === 'true' ||
+      process.env.REQUIRE_DB_ENV === 'true' ||
+      process.env.VERCEL_ENV === 'preview' ||
+      process.env.VERCEL_ENV === 'production');
 
   if (isProdOrStaging) {
     throw new Error(`Environment validation failed: ${JSON.stringify((error as z.ZodError).format())}`);
   }
-  // In development/test, provide defaults
+  // In development/test/build phase, provide defaults
   parsedEnv = envSchema.parse({});
 }
 

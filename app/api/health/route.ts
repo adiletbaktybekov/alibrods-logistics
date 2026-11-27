@@ -24,8 +24,9 @@ export async function GET() {
       status: 'healthy',
       timestamp: new Date().toISOString(),
       uptimeSeconds: Math.floor(process.uptime()),
-      gitCommit: process.env.VERCEL_GIT_COMMIT_SHA || 'local',
+      gitCommit: process.env.VERCEL_GIT_COMMIT_SHA || process.env.APP_GIT_COMMIT || 'local',
       environment: process.env.NODE_ENV || 'development',
+      runtime: process.env.VERCEL ? 'vercel' : 'standalone',
       services: {
         api: 'online',
         database: dbStatus,
