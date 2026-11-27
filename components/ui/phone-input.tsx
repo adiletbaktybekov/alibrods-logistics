@@ -80,6 +80,14 @@ export const PhoneInput = React.forwardRef<HTMLInputElement, PhoneInputProps>(
         });
     }, [fullUtils]);
 
+    // If component mounts with a pre-filled number (e.g. /profile), load full metadata automatically
+    // while keeping empty /login and /register inputs 100% lazy.
+    React.useEffect(() => {
+      if ((value && value.trim()) || (defaultValue && defaultValue.trim())) {
+        ensureFullUtils();
+      }
+    }, [value, defaultValue, ensureFullUtils]);
+
     const formatDigits = React.useCallback(
       (digits: string, targetCountry: CountryCode) =>
         fullUtils
