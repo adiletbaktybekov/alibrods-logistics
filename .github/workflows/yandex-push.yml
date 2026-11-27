@@ -85,10 +85,16 @@ jobs:
         env:
           GHCR_TAG: ${{ inputs.ghcr_tag || 'sha-4dc9858' }}
         run: |
-          REPO_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+
           SOURCE_IMAGE="ghcr.io/${REPO_LOWER}/alibros-poc:${GHCR_TAG}"
-          echo "Pulling source image: $SOURCE_IMAGE"
-          docker pull "$SOURCE_IMAGE"
+          echo "Attempting to pull: $SOURCE_IMAGE"
+          if ! docker pull "$SOURCE_IMAGE"; then
+            SOURCE_IMAGE="ghcr.io/${OWNER_LOWER}/alibros-poc:${GHCR_TAG}"
+            echo "Fallback: attempting to pull $SOURCE_IMAGE"
+            docker pull "$SOURCE_IMAGE"
+          fi
 
           IMAGE_ID=$(docker images --no-trunc -q "$SOURCE_IMAGE" | head -n 1)
           echo "Source Image Local ID: $IMAGE_ID"
