@@ -1,0 +1,139 @@
+name: Promote Docker Image to Yandex Container Registry
+
+on:
+  workflow_dispatch:
+    inputs:
+      ghcr_tag:
+        description: 'Source GHCR tag to pull and promote'
+        required: true
+        default: 'sha-4dc9858'
+      yandex_registry_id:
+        description: 'Target Yandex Registry ID'
+        required: true
+        default: 'crp27icncifk5342gp90'
+      repository_name:
+        description: 'Target image repository name in YCR'
+        required: true
+        default: 'alibros-poc'
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  promote-to-yandex:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate Yandex Cloud Credentials Secret
+        env:
+          YC_KEY: ${{ secrets.YC_SERVICE_ACCOUNT_KEY }}
+        run: |
+          # 1. Verify secret is populated
+          if [ -z "$YC_KEY" ]; then
+            echo "::error::Secret YC_SERVICE_ACCOUNT_KEY is missing or empty in repository secrets."
+            exit 1
+          fi
+
+          # 2. Add mask to prevent accidental secret leakage in runner logs
+          echo "::add-mask::$YC_KEY"
+
+          # 3. Validate JSON format
+          if ! echo "$YC_KEY" | jq empty 2>/dev/null; then
+            echo "::error::Secret YC_SERVICE_ACCOUNT_KEY is not a valid JSON string."
+            exit 1
+          fi
+
+          # 4. Extract safe non-sensitive metadata for diagnostic logging
+          SA_ID=$(echo "$YC_KEY" | jq -r '.service_account_id // empty')
+          KEY_ID=$(echo "$YC_KEY" | jq -r '.id // empty')
+          KEY_ALG=$(echo "$YC_KEY" | jq -r '.key_algorithm // empty')
+          HAS_PRIV_KEY=$(echo "$YC_KEY" | jq -r 'if .private_key then "present" else "missing" end')
+
+          if [ -z "$SA_ID" ] || [ -z "$KEY_ID" ] || [ "$HAS_PRIV_KEY" != "present" ]; then
+            echo "::error::Secret YC_SERVICE_ACCOUNT_KEY JSON is missing required fields (service_account_id, id, or private_key)."
+            exit 1
+          fi
+
+          echo "✅ Yandex Cloud service account key is valid."
+          echo "   Service Account ID: $SA_ID"
+          echo "   Key ID: $KEY_ID"
+          echo "   Key Algorithm: $KEY_ALG"
+          echo "   Private Key: $HAS_PRIV_KEY"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull Source Image from GHCR
+        env:
+          GHCR_TAG: ${{ inputs.ghcr_tag || 'sha-4dc9858' }}
+        run: |
+          REPO_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          SOURCE_IMAGE="ghcr.io/${REPO_LOWER}/alibros-poc:${GHCR_TAG}"
+          echo "Pulling source image: $SOURCE_IMAGE"
+          docker pull "$SOURCE_IMAGE"
+
+          IMAGE_ID=$(docker images --no-trunc -q "$SOURCE_IMAGE" | head -n 1)
+          echo "Source Image Local ID: $IMAGE_ID"
+          echo "SOURCE_IMAGE=$SOURCE_IMAGE" >> "$GITHUB_ENV"
+
+      - name: Log in to Yandex Cloud Container Registry
+        uses: yc-actions/yc-cr-login@v3
+        with:
+          yc-sa-json-credentials: ${{ secrets.YC_SERVICE_ACCOUNT_KEY }}
+
+      - name: Tag and Push to Yandex Container Registry
+        env:
+          REGISTRY_ID: ${{ inputs.yandex_registry_id || 'crp27icncifk5342gp90' }}
+          REPO_NAME: ${{ inputs.repository_name || 'alibros-poc' }}
+          IMAGE_TAG: ${{ inputs.ghcr_tag || 'sha-4dc9858' }}
+        run: |
+          TARGET_TAGGED="cr.yandex/${REGISTRY_ID}/${REPO_NAME}:${IMAGE_TAG}"
+          TARGET_LATEST="cr.yandex/${REGISTRY_ID}/${REPO_NAME}:latest"
+
+          echo "Tagging image:"
+          echo "  -> $TARGET_TAGGED"
+          echo "  -> $TARGET_LATEST"
+          docker tag "$SOURCE_IMAGE" "$TARGET_TAGGED"
+          docker tag "$SOURCE_IMAGE" "$TARGET_LATEST"
+
+          echo "Pushing tagged image to Yandex Container Registry..."
+          if ! docker push "$TARGET_TAGGED"; then
+            echo "::error::Failed to push $TARGET_TAGGED. Ensure service account has 'container-registry.images.pusher' role on registry $REGISTRY_ID."
+            exit 1
+          fi
+
+          echo "Pushing latest image to Yandex Container Registry..."
+          if ! docker push "$TARGET_LATEST"; then
+            echo "::error::Failed to push $TARGET_LATEST."
+            exit 1
+          fi
+
+          echo "TARGET_TAGGED=$TARGET_TAGGED" >> "$GITHUB_ENV"
+          echo "TARGET_LATEST=$TARGET_LATEST" >> "$GITHUB_ENV"
+
+      - name: Verify Published Image in Yandex Container Registry
+        run: |
+          echo "================================================================="
+          echo "✅ PUBLICATION TO YANDEX CONTAINER REGISTRY COMPLETED"
+          echo "================================================================="
+          echo "Registry Endpoint: cr.yandex"
+          echo "Target Registry ID: ${{ inputs.yandex_registry_id || 'crp27icncifk5342gp90' }}"
+          echo "Published Tagged: $TARGET_TAGGED"
+          echo "Published Latest: $TARGET_LATEST"
+          echo "================================================================="
+
+          # Inspect manifest from registry to verify it is accessible and published
+          docker manifest inspect "$TARGET_TAGGED"
