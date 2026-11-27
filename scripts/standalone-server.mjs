@@ -58,8 +58,16 @@ process.on('beforeExit', async () => {
   }
 });
 
-// Resolve Next.js standalone server.js relative to app root
-const serverEntryPath = path.resolve(__dirname, '..', 'server.js');
+import fs from 'fs';
+
+// Resolve Next.js standalone server.js relative to app root or inside .next/standalone
+let serverEntryPath = path.resolve(__dirname, '..', 'server.js');
+if (!fs.existsSync(serverEntryPath)) {
+  const localStandalonePath = path.resolve(__dirname, '..', '.next', 'standalone', 'server.js');
+  if (fs.existsSync(localStandalonePath)) {
+    serverEntryPath = localStandalonePath;
+  }
+}
 
 console.log(
   JSON.stringify({
