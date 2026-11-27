@@ -1,6 +1,11 @@
 name: Promote Docker Image to Yandex Container Registry
 
 on:
+  push:
+    branches:
+      - poc/ru-cloud-standalone
+    paths:
+      - '.github/workflows/yandex-push.yml'
   workflow_dispatch:
     inputs:
       ghcr_tag:
